@@ -223,6 +223,92 @@ class MarketData:
         except Exception:
             pass
 
+        # ── Pass 3: Financial statements — derive ratios when .info stub fails ──
+        # Targets: pe_ratio, pb_ratio, roe, net_margin, gross_margin
+        # Uses income_stmt + balance_sheet which are usually available even when
+        # .info returns a near-empty dict (common for Thai / Asian stocks on Cloud).
+        try:
+            needs = {
+                "pe_ratio":    not base.get("pe_ratio"),
+                "pb_ratio":    not base.get("pb_ratio"),
+                "roe":         not base.get("roe"),
+                "net_margin":  not base.get("net_margin"),
+                "gross_margin":not base.get("gross_margin"),
+            }
+            if any(needs.values()) and base:
+                mc = base.get("market_cap")   # provided by fast_info (Pass 2)
+                net_income_val: Optional[float] = None
+
+                # ── Income statement ─────────────────────────────────────────
+                if needs["pe_ratio"] or needs["roe"] or needs["net_margin"] or needs["gross_margin"]:
+                    try:
+                        inc = stock.income_stmt          # rows=items, cols=dates (newest first)
+                        if inc is not None and not inc.empty:
+                            col = inc.columns[0]          # most recent annual period
+
+                            def _row(df: pd.DataFrame, *names) -> Optional[float]:
+                                for n in names:
+                                    if n in df.index:
+                                        v = df.loc[n, col]
+                                        if pd.notna(v):
+                                            return float(v)
+                                return None
+
+                            net_income_val = _row(inc,
+                                "Net Income", "Net Income Common Stockholders",
+                                "NetIncome", "Net Income Applicable To Common Shares")
+                            revenue_val    = _row(inc,
+                                "Total Revenue", "Revenue", "TotalRevenue",
+                                "Revenues")
+                            gross_val      = _row(inc,
+                                "Gross Profit", "GrossProfit")
+
+                            if needs["pe_ratio"] and mc and net_income_val and net_income_val > 0:
+                                base["pe_ratio"] = _v(mc / net_income_val, 2)
+
+                            if needs["net_margin"] and net_income_val is not None and revenue_val:
+                                if revenue_val != 0:
+                                    base["net_margin"] = _v(net_income_val / revenue_val * 100, 2)
+
+                            if needs["gross_margin"] and gross_val is not None and revenue_val:
+                                if revenue_val != 0:
+                                    base["gross_margin"] = _v(gross_val / revenue_val * 100, 2)
+                    except Exception:
+                        pass
+
+                # ── Balance sheet ────────────────────────────────────────────
+                if needs["pb_ratio"] or needs["roe"]:
+                    try:
+                        bs = stock.balance_sheet
+                        if bs is not None and not bs.empty:
+                            col_bs = bs.columns[0]
+
+                            def _bs_row(*names) -> Optional[float]:
+                                for n in names:
+                                    if n in bs.index:
+                                        v = bs.loc[n, col_bs]
+                                        if pd.notna(v):
+                                            return float(v)
+                                return None
+
+                            equity_val = _bs_row(
+                                "Stockholders Equity",
+                                "Total Stockholders Equity",
+                                "Common Stock Equity",
+                                "StockholdersEquity",
+                                "Total Equity Gross Minority Interest",
+                            )
+
+                            if equity_val and equity_val > 0:
+                                if needs["pb_ratio"] and mc:
+                                    base["pb_ratio"] = _v(mc / equity_val, 2)
+                                if needs["roe"] and net_income_val is not None:
+                                    base["roe"] = _v(net_income_val / equity_val * 100, 2)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
         return base if base else self._minimal_info(ticker, asset_class)
 
     def _minimal_info(self, ticker: str, asset_class: str = "stock",

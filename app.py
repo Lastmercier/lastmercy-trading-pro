@@ -361,9 +361,11 @@ def fmt_number(n):
 
 
 def pct(v):
+    """Format a value that is already stored in percent form (e.g. 15.5 → '15.5%').
+    Values come from _pct() in market_data.py which already multiplies by 100."""
     if v is None:
         return "N/A"
-    return f"{float(v)*100:.1f}%"
+    return f"{float(v):.1f}%"
 
 
 def verdict_css(text: str) -> str:
