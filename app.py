@@ -1762,12 +1762,8 @@ with ic_col:
             _err_str = str(_ic_err)
             if "RateLimit" in _err_str or "rate_limit" in _err_str.lower() or "429" in _err_str:
                 st.error(
-                    "⚡ **Groq Rate Limit reached**\n\n"
-                    "IC Committee ส่ง request ไปมากเกินไปในช่วงเวลาสั้น\n\n"
-                    "**วิธีแก้:**\n"
-                    "1. เปลี่ยน IC Depth เป็น **quick (5 agents)**\n"
-                    "2. รอ **2-3 นาที** แล้วกด Run Analysis ใหม่\n"
-                    "3. หรือเปลี่ยนไปใช้ Anthropic API",
+                    "⚡ **Groq Rate Limit**  IC Committee ถูก throttle\n\n"
+                    "วิธีแก้: เปลี่ยน IC Depth → **quick (5 agents)** หรือรอ 2 นาทีแล้วลองใหม่",
                     icon="⚡",
                 )
             else:
@@ -1775,6 +1771,17 @@ with ic_col:
             ic_results = {}
     else:
         st.info("IC Committee skipped (short-term mode selected)", icon="⏭️")
+
+# ── "Report ready" banner — always shown so user knows to scroll down ─────────
+_ic_ok = bool(ic_results) if mode in ("long", "both") else True
+if _ic_ok:
+    st.success("✅ **Analysis complete** — Report พร้อมแล้ว  ↓ scroll ลงด้านล่าง", icon="📋")
+else:
+    st.warning(
+        "⚠️ **Report พร้อมแล้ว** (ไม่มี IC Verdict เพราะ rate limit)  "
+        "↓ scroll ลงด้านล่างเพื่อดู Overview / Research / MTF",
+        icon="📋",
+    )
 
 # ── Persist results + render dashboard ────────────────────────────────────────
 # Store everything so a later rerun (e.g. PDF download click) can repaint the
