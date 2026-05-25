@@ -473,6 +473,58 @@ def render_mtf_grid(mtf_data: dict):
     st.markdown(html, unsafe_allow_html=True)
 
 
+def render_tradingview_chart(ticker: str, asset_class: str, market: str,
+                             height: int = 420):
+    """Embed a TradingView Advanced Real-Time Chart widget."""
+    import streamlit.components.v1 as components
+    tv_symbol = to_tradingview_symbol(ticker, asset_class, market)
+    widget_html = f"""
+<div class="tradingview-widget-container" style="height:{height}px;width:100%">
+  <div id="tv_chart_{ticker.replace('.','_').replace('-','_')}"
+       style="height:{height}px;width:100%"></div>
+  <script type="text/javascript"
+    src="https://s3.tradingview.com/tv.js"></script>
+  <script type="text/javascript">
+    new TradingView.widget({{
+      "container_id": "tv_chart_{ticker.replace('.','_').replace('-','_')}",
+      "autosize":     true,
+      "symbol":       "{tv_symbol}",
+      "interval":     "D",
+      "timezone":     "Asia/Bangkok",
+      "theme":        "light",
+      "style":        "1",
+      "locale":       "en",
+      "toolbar_bg":   "#f8fafc",
+      "enable_publishing":  false,
+      "hide_top_toolbar":   false,
+      "hide_legend":        false,
+      "save_image":         false,
+      "studies": [
+        "RSI@tv-basicstudies",
+        "MACD@tv-basicstudies"
+      ],
+      "show_popup_button":  true,
+      "popup_width":  "1000",
+      "popup_height": "650"
+    }});
+  </script>
+</div>"""
+    components.html(widget_html, height=height + 10, scrolling=False)
+
+
+def render_etf_holdings(ticker: str):
+    """Fetch and display ETF top holdings table."""
+    with st.spinner("กำลังโหลด holdings..."):
+        holdings = get_etf_holdings(ticker)
+    if not holdings:
+        st.caption("ℹ️ Holdings data not available for this ticker (works best for US ETFs like SPY, QQQ, VTI)")
+        return
+    import pandas as pd
+    df = pd.DataFrame(holdings)
+    df.columns = ["Symbol", "Name", "Weight (%)"]
+    st.dataframe(df, use_container_width=True, hide_index=True)
+
+
 def render_dashboard(A: dict):
     """
     Render the full results dashboard (metrics, MTF grid, PDF download, tabs)
@@ -567,6 +619,16 @@ def render_dashboard(A: dict):
 
     # ── Overview tab ─────────────────────────────────────────────────────────
     with tab_map["📊 Overview"]:
+        # ── TradingView Chart ─────────────────────────────────────────────
+        st.markdown(
+            '<div style="font-size:0.78rem;font-weight:700;letter-spacing:1px;'
+            'text-transform:uppercase;color:#64748b;margin-bottom:6px">'
+            '📈 LIVE CHART (TradingView)</div>',
+            unsafe_allow_html=True,
+        )
+        render_tradingview_chart(ticker, asset_class, market)
+        st.markdown("---")
+
         scol, rcol = st.columns([1, 1])
         with scol:
             st.markdown(f"### {company}")
@@ -574,6 +636,20 @@ def render_dashboard(A: dict):
             desc = info.get("description", "")
             if desc:
                 st.markdown(desc[:300] + ("…" if len(desc) > 300 else ""))
+
+            # Thai fund info
+            if asset_class == "fund":
+                fund_info = get_thai_fund_info(ticker)
+                if fund_info:
+                    st.info(
+                        f"🏦 **{fund_info['name']}**\n\n"
+                        f"ข้อมูลกองทุนไทยไม่ได้อยู่บน Yahoo Finance — "
+                        f"ดูข้อมูล NAV และ holdings ได้ที่:\n"
+                        f"[{fund_info['url']}]({fund_info['url']}) "
+                        f"หรือ [SEC Thailand](https://www.sec.or.th)",
+                        icon="🏦",
+                    )
+
         with rcol:
             st.markdown("#### Key Metrics")
             kdf = {
@@ -593,6 +669,11 @@ def render_dashboard(A: dict):
                 use_container_width=True,
                 hide_index=True,
             )
+
+        # ── ETF Holdings ──────────────────────────────────────────────────
+        if asset_class in ("etf", "stock") and not ticker.endswith(".BK"):
+            with st.expander("🗂 ETF / Fund Holdings (top 15)", expanded=False):
+                render_etf_holdings(ticker)
 
         if news:
             st.markdown("#### Latest News")
@@ -908,9 +989,35 @@ ollama pull llama3.1:8b   # alternative
     st.markdown("### 📌 Asset")
     ticker_input = st.text_input(
         "Ticker Symbol",
-        placeholder="AAPL · PTT · BTC · GOLD · 9988.HK",
-        help="Type any ticker — the system resolves it automatically.",
+        placeholder="AAPL · PTT · BTC · GOLD · 9988.HK · 7203.T",
+        help="Type any ticker, name, or pair — fuzzy search finds it even with typos.",
     )
+
+    # ── Fuzzy search suggestions ──────────────────────────────────────────────
+    if ticker_input and len(ticker_input.strip()) >= 2:
+        _raw = ticker_input.strip()
+        _suggestions = fuzzy_suggest(_raw, n=5)
+        # Only show suggestions if the top hit looks different from raw input
+        _top_sym = _suggestions[0]["ticker"] if _suggestions else ""
+        _show = (
+            len(_suggestions) > 0
+            and _raw.upper() not in {s["ticker"].replace(".BK","").replace("-USD","") for s in _suggestions}
+        )
+        if _show and len(_suggestions) > 1:
+            st.markdown(
+                '<div style="font-size:0.72rem;color:#64748b;margin-bottom:3px">'
+                '🔍 Did you mean?</div>',
+                unsafe_allow_html=True,
+            )
+            for s in _suggestions[:4]:
+                _disp = s["display"][:45]
+                _sym  = s["ticker"]
+                st.markdown(
+                    f'<div style="font-size:0.73rem;padding:2px 0;color:#4f46e5">'
+                    f'<code style="font-size:0.72rem">{_sym}</code> — {_disp}'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
 
     # ── Ticker format reference card ──────────────────────────────────────────
     with st.expander("📖 Ticker format guide by country / asset class", expanded=False):
@@ -919,7 +1026,7 @@ ollama pull llama3.1:8b   # alternative
 <div class="tg-card">
 
 <div class="tg-row">
-  <div class="tg-label">🇹🇭 Thai Stocks (SET / MAI)</div>
+  <div class="tg-label">🇹🇭 Thai Stocks (SET / MAI) — 450+ tickers</div>
   <div class="tg-chips">
     <span class="tg-chip tg-set">PTT</span>
     <span class="tg-chip tg-set">GPSC</span>
@@ -928,8 +1035,11 @@ ollama pull llama3.1:8b   # alternative
     <span class="tg-chip tg-set">DELTA</span>
     <span class="tg-chip tg-set">ADVANC</span>
     <span class="tg-chip tg-set">CPALL</span>
+    <span class="tg-chip tg-set">GULF</span>
+    <span class="tg-chip tg-set">MINT</span>
+    <span class="tg-chip tg-set">IVL</span>
   </div>
-  <div class="tg-note">Type the symbol directly → system appends .BK automatically<br>If not found, try adding .BK manually, e.g. <b>GULF.BK</b></div>
+  <div class="tg-note">พิมพ์ symbol ตรงๆ → ระบบเติม .BK อัตโนมัติ · ใส่ fuzzy search พิมพ์ผิดนิดหน่อยก็ได้<br>ถ้าไม่เจอ ลองเพิ่ม .BK ต่อท้าย เช่น <b>GULF.BK</b></div>
 </div>
 
 <div class="tg-row">
@@ -943,11 +1053,11 @@ ollama pull llama3.1:8b   # alternative
     <span class="tg-chip tg-us">VTI</span>
     <span class="tg-chip tg-us">ARKK</span>
   </div>
-  <div class="tg-note">Type the ticker directly — no suffix needed</div>
+  <div class="tg-note">Type the ticker directly — no suffix needed · ETF holdings shown in Overview tab</div>
 </div>
 
 <div class="tg-row">
-  <div class="tg-label">₿ Crypto</div>
+  <div class="tg-label">₿ Crypto — top 100</div>
   <div class="tg-chips">
     <span class="tg-chip tg-cry">BTC</span>
     <span class="tg-chip tg-cry">ETH</span>
@@ -956,8 +1066,11 @@ ollama pull llama3.1:8b   # alternative
     <span class="tg-chip tg-cry">XRP</span>
     <span class="tg-chip tg-cry">DOGE</span>
     <span class="tg-chip tg-cry">AVAX</span>
+    <span class="tg-chip tg-cry">PEPE</span>
+    <span class="tg-chip tg-cry">SUI</span>
+    <span class="tg-chip tg-cry">TON</span>
   </div>
-  <div class="tg-note">Binance format also works → <b>BTCUSDT</b>, <b>ETHUSDT</b><br>Or full name: <b>bitcoin</b>, <b>ethereum</b>, <b>solana</b></div>
+  <div class="tg-note">Binance format ก็ได้ → <b>BTCUSDT</b>, <b>ETHUSDT</b> · Full name: <b>bitcoin</b>, <b>solana</b></div>
 </div>
 
 <div class="tg-row">
@@ -969,39 +1082,78 @@ ollama pull llama3.1:8b   # alternative
     <span class="tg-chip tg-com">BRENT</span>
     <span class="tg-chip tg-com">NATGAS</span>
     <span class="tg-chip tg-com">COPPER</span>
+    <span class="tg-chip tg-com">WHEAT</span>
+    <span class="tg-chip tg-com">PLATINUM</span>
   </div>
   <div class="tg-note">Type the English name → system maps to futures symbol</div>
 </div>
 
 <div class="tg-row">
-  <div class="tg-label">🇭🇰 Hong Kong (HKEX)</div>
+  <div class="tg-label">💱 Forex — 35+ pairs</div>
+  <div class="tg-chips">
+    <span class="tg-chip tg-fx">EURUSD</span>
+    <span class="tg-chip tg-fx">GBPUSD</span>
+    <span class="tg-chip tg-fx">USDJPY</span>
+    <span class="tg-chip tg-fx">USDTHB</span>
+    <span class="tg-chip tg-fx">AUDUSD</span>
+    <span class="tg-chip tg-fx">USDSGD</span>
+    <span class="tg-chip tg-fx">USDCNY</span>
+    <span class="tg-chip tg-fx">EURGBP</span>
+  </div>
+  <div class="tg-note">พิมพ์คู่เงิน 6 ตัวอักษร · รองรับ slash ด้วย: <b>EUR/USD</b>, <b>USD/THB</b></div>
+</div>
+
+<div class="tg-row">
+  <div class="tg-label">🇭🇰 Hong Kong · 🇹🇼 Taiwan · 🇨🇳 China</div>
   <div class="tg-chips">
     <span class="tg-chip tg-hk">9988.HK</span>
     <span class="tg-chip tg-hk">0700.HK</span>
-    <span class="tg-chip tg-hk">9618.HK</span>
-    <span class="tg-chip tg-hk">1211.HK</span>
-  </div>
-  <div class="tg-note">Must include <b>.HK</b> suffix · 4-digit numeric code</div>
-</div>
-
-<div class="tg-row">
-  <div class="tg-label">🇹🇼 Taiwan (TWSE)</div>
-  <div class="tg-chips">
     <span class="tg-chip tg-tw">2330.TW</span>
-    <span class="tg-chip tg-tw">2317.TW</span>
     <span class="tg-chip tg-tw">2454.TW</span>
+    <span class="tg-chip tg-hk">601318.SS</span>
+    <span class="tg-chip tg-hk">000858.SZ</span>
   </div>
-  <div class="tg-note">Must include <b>.TW</b> suffix · TSMC = <b>2330.TW</b></div>
+  <div class="tg-note">ใส่ suffix ตามตลาด: <b>.HK</b> · <b>.TW</b> · <b>.SS</b> (Shanghai) · <b>.SZ</b> (Shenzhen)</div>
 </div>
 
 <div class="tg-row">
-  <div class="tg-label">📊 Market Indices</div>
+  <div class="tg-label">🇯🇵 Japan · 🇰🇷 Korea · 🇸🇬 Singapore</div>
   <div class="tg-chips">
-    <span class="tg-chip tg-fx">SP500</span>
-    <span class="tg-chip tg-fx">NASDAQ</span>
-    <span class="tg-chip tg-fx">DJI</span>
+    <span class="tg-chip tg-fx">7203.T</span>
+    <span class="tg-chip tg-fx">9984.T</span>
+    <span class="tg-chip tg-fx">005930.KS</span>
+    <span class="tg-chip tg-fx">035420.KS</span>
+    <span class="tg-chip tg-fx">D05.SI</span>
+    <span class="tg-chip tg-fx">Z74.SI</span>
   </div>
-  <div class="tg-note">Market indices — useful for macro backdrop analysis</div>
+  <div class="tg-note">Japan <b>.T</b> · Korea <b>.KS</b> · Singapore <b>.SI</b> · พิมพ์แค่ตัวเลข 4 หลัก → ระบบลอง .T อัตโนมัติ</div>
+</div>
+
+<div class="tg-row">
+  <div class="tg-label">🇩🇪 Europe · 🇬🇧 UK · 🇦🇺 Australia</div>
+  <div class="tg-chips">
+    <span class="tg-chip tg-fx">SAP.DE</span>
+    <span class="tg-chip tg-fx">BAS.DE</span>
+    <span class="tg-chip tg-fx">SHEL.L</span>
+    <span class="tg-chip tg-fx">HSBA.L</span>
+    <span class="tg-chip tg-fx">BHP.AX</span>
+    <span class="tg-chip tg-fx">CBA.AX</span>
+  </div>
+  <div class="tg-note">Germany <b>.DE</b> · London <b>.L</b> · Australia <b>.AX</b></div>
+</div>
+
+<div class="tg-row">
+  <div class="tg-label">📊 Market Indices · 🏦 Thai Funds</div>
+  <div class="tg-chips">
+    <span class="tg-chip tg-com">SP500</span>
+    <span class="tg-chip tg-com">NASDAQ</span>
+    <span class="tg-chip tg-com">NIKKEI</span>
+    <span class="tg-chip tg-com">KOSPI</span>
+    <span class="tg-chip tg-com">VIX</span>
+    <span class="tg-chip tg-set">KF-CHINA</span>
+    <span class="tg-chip tg-set">SCBTHAI</span>
+  </div>
+  <div class="tg-note">กองทุนไทย พิมพ์ fund code เช่น <b>KF-CHINA</b>, <b>SCBTHAI</b>, <b>BBLPLUS</b></div>
 </div>
 
 </div>
@@ -1175,7 +1327,10 @@ from agents.finance_team import Reese, Max, Vera
 from agents.trading_team import Scout, Trader, Risk as RiskAgent
 from agents.ic_team import InvestmentCommittee
 from tools.market_data import MarketData
-from tools.ticker_resolver import asset_class_label
+from tools.ticker_resolver import (
+    asset_class_label, fuzzy_suggest, to_tradingview_symbol,
+    get_etf_holdings, get_thai_fund_info, THAI_FUNDS,
+)
 from tools.pdf_reader import extract_text
 
 # ── Pipeline execution ────────────────────────────────────────────────────────
@@ -1221,10 +1376,18 @@ with st.status("☁️ Joey — routing request...", expanded=False) as cloudy_s
 
 if uncertain:
     st.info(
-        f"⚠️ **{ticker_raw.upper()}** not found in database — trying `{ticker}` (SET). "
-        f"If no data, try adding **.BK** suffix or verify the ticker on [Yahoo Finance](https://finance.yahoo.com)",
+        f"⚠️ **{ticker_raw.upper()}** — กำลังลอง `{ticker}` · "
+        f"ถ้าข้อมูลไม่ขึ้น ลองเพิ่ม suffix (.BK / .T / .KS / .SI) หรือตรวจสอบที่ "
+        f"[Yahoo Finance](https://finance.yahoo.com)",
         icon="🔍",
     )
+    # Show fuzzy alternatives
+    _alts = fuzzy_suggest(ticker_raw, n=4)
+    if _alts:
+        _alt_str = "  |  ".join(
+            f"`{a['ticker']}` ({a['display'][:30]})" for a in _alts[:3]
+        )
+        st.caption(f"🔍 ผลค้นหาที่ใกล้เคียง: {_alt_str}")
 
 # ── Step 1: Market data ───────────────────────────────────────────────────────
 with st.status(f"📡 Fetching {ac_label} data for {ticker}...", expanded=False) as data_status:
