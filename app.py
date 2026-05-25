@@ -9,6 +9,12 @@ from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).parent))
 load_dotenv()
 
+# ── Ticker resolver — loaded at module level (needed for sidebar + dashboard) ─
+from tools.ticker_resolver import (
+    asset_class_label, fuzzy_suggest, to_tradingview_symbol,
+    get_etf_holdings, get_thai_fund_info, THAI_FUNDS,
+)
+
 # ── Streamlit Cloud: load secrets into env vars ───────────────────────────────
 # On Streamlit Community Cloud, secrets are in st.secrets (not .env).
 # This bridge makes the rest of the code work unchanged.
@@ -1327,10 +1333,6 @@ from agents.finance_team import Reese, Max, Vera
 from agents.trading_team import Scout, Trader, Risk as RiskAgent
 from agents.ic_team import InvestmentCommittee
 from tools.market_data import MarketData
-from tools.ticker_resolver import (
-    asset_class_label, fuzzy_suggest, to_tradingview_symbol,
-    get_etf_holdings, get_thai_fund_info, THAI_FUNDS,
-)
 from tools.pdf_reader import extract_text
 
 # ── Pipeline execution ────────────────────────────────────────────────────────
