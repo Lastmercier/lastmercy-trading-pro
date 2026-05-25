@@ -94,27 +94,50 @@ def _coingecko_info(yf_ticker: str) -> dict:
         return {}
 
 
+def _infer_currency(ticker: str) -> str:
+    """Guess the trading currency from the ticker suffix."""
+    t = ticker.upper()
+    if t.endswith(".BK"):  return "THB"
+    if t.endswith(".HK"):  return "HKD"
+    if t.endswith(".T"):   return "JPY"
+    if t.endswith(".KS") or t.endswith(".KQ"): return "KRW"
+    if t.endswith(".SI"):  return "SGD"
+    if t.endswith(".TW"):  return "TWD"
+    if t.endswith(".L"):   return "GBP"
+    if t.endswith(".DE") or t.endswith(".PA") or t.endswith(".AS"): return "EUR"
+    if t.endswith(".AX"):  return "AUD"
+    if t.endswith(".SS") or t.endswith(".SZ"): return "CNY"
+    if "-USD" in t:        return "USD"
+    return "USD"
+
+
 # ── Main class ────────────────────────────────────────────────────────────────
 class MarketData:
 
     # ── Info / fundamentals ───────────────────────────────────────────────────
     def get_info(self, ticker: str, asset_class: str = "stock") -> dict:
-        """Fetch fundamental/descriptive info for any asset class."""
-
+        """
+        Fetch fundamental/descriptive info.
+        Two-pass strategy:
+          1. yfinance .info  (full fundamentals — may return stub on Cloud)
+          2. yfinance .fast_info  (always works: price, market_cap, currency, 52W)
+        The fast_info pass fills gaps left by .info so we never show None when
+        data is actually available.
+        """
         # Crypto: try CoinGecko first for richer data
         if asset_class == "crypto":
             cg = _coingecko_info(ticker)
             if cg:
                 return cg
-            # fallback to yfinance if CoinGecko failed/rate-limited
+            # fallback to yfinance below
 
+        stock = yf.Ticker(ticker)
+
+        # ── Pass 1: full .info ────────────────────────────────────────────────
+        base: dict = {}
         try:
-            stock = yf.Ticker(ticker)
-            info  = stock.info or {}
+            info = stock.info or {}
 
-            # yfinance sometimes returns an empty/stub dict.
-            # Only bail out if there is truly nothing useful — if a price or
-            # marketCap is present, keep going even without a company name.
             _raw_price = (info.get("currentPrice")
                           or info.get("regularMarketPrice")
                           or info.get("previousClose")
@@ -123,64 +146,95 @@ class MarketData:
                 info.get("symbol") or info.get("shortName") or info.get("longName")
                 or _raw_price or info.get("marketCap") or info.get("quoteType")
             )
-            if not _has_data:
-                return self._minimal_info(ticker, asset_class)
 
-            base = {
-                "ticker":           ticker,
-                "company":          info.get("longName") or info.get("shortName") or ticker,
-                "sector":           info.get("sector", "N/A"),
-                "industry":         info.get("industry", "N/A"),
-                "market_cap":       info.get("marketCap"),
-                "current_price":    (info.get("currentPrice")
-                                     or info.get("regularMarketPrice")
-                                     or info.get("previousClose")),
-                "currency":         info.get("currency", "USD"),
-                "pe_ratio":         _v(info.get("trailingPE")),
-                "forward_pe":       _v(info.get("forwardPE")),
-                "pb_ratio":         _v(info.get("priceToBook")),
-                "ps_ratio":         _v(info.get("priceToSalesTrailing12Months")),
-                "dividend_yield":   _pct(info.get("dividendYield")),
-                "roe":              _pct(info.get("returnOnEquity")),
-                "roa":              _pct(info.get("returnOnAssets")),
-                "debt_equity":      _v(info.get("debtToEquity")),
-                "current_ratio":    _v(info.get("currentRatio")),
-                "gross_margin":     _pct(info.get("grossMargins")),
-                "net_margin":       _pct(info.get("profitMargins")),
-                "operating_margin": _pct(info.get("operatingMargins")),
-                "revenue_growth":   _pct(info.get("revenueGrowth")),
-                "earnings_growth":  _pct(info.get("earningsGrowth")),
-                "52w_high":         _v(info.get("fiftyTwoWeekHigh")),
-                "52w_low":          _v(info.get("fiftyTwoWeekLow")),
-                "avg_volume_10d":   _safe_int(info.get("averageVolume10days")),
-                "beta":             _v(info.get("beta")),
-                "short_ratio":      _v(info.get("shortRatio")),
-                "analyst_target":   _v(info.get("targetMeanPrice")),
-                "recommendation":   info.get("recommendationKey", "N/A"),
-                "description":      (info.get("longBusinessSummary", "") or "")[:600],
-                "_source":          "yfinance",
-            }
+            if _has_data:
+                base = {
+                    "ticker":           ticker,
+                    "company":          (info.get("longName") or info.get("shortName")
+                                         or info.get("displayName") or ticker),
+                    "sector":           info.get("sector") or "N/A",
+                    "industry":         info.get("industry") or "N/A",
+                    "market_cap":       info.get("marketCap"),
+                    "current_price":    _raw_price,
+                    "currency":         info.get("currency") or _infer_currency(ticker),
+                    "pe_ratio":         _v(info.get("trailingPE")),
+                    "forward_pe":       _v(info.get("forwardPE")),
+                    "pb_ratio":         _v(info.get("priceToBook")),
+                    "ps_ratio":         _v(info.get("priceToSalesTrailing12Months")),
+                    "dividend_yield":   _pct(info.get("dividendYield")),
+                    "roe":              _pct(info.get("returnOnEquity")),
+                    "roa":              _pct(info.get("returnOnAssets")),
+                    "debt_equity":      _v(info.get("debtToEquity")),
+                    "current_ratio":    _v(info.get("currentRatio")),
+                    "gross_margin":     _pct(info.get("grossMargins")),
+                    "net_margin":       _pct(info.get("profitMargins")),
+                    "operating_margin": _pct(info.get("operatingMargins")),
+                    "revenue_growth":   _pct(info.get("revenueGrowth")),
+                    "earnings_growth":  _pct(info.get("earningsGrowth")),
+                    "52w_high":         _v(info.get("fiftyTwoWeekHigh")),
+                    "52w_low":          _v(info.get("fiftyTwoWeekLow")),
+                    "avg_volume_10d":   _safe_int(info.get("averageVolume10days")),
+                    "beta":             _v(info.get("beta")),
+                    "short_ratio":      _v(info.get("shortRatio")),
+                    "analyst_target":   _v(info.get("targetMeanPrice")),
+                    "recommendation":   info.get("recommendationKey") or "N/A",
+                    "description":      (info.get("longBusinessSummary") or "")[:600],
+                    "_source":          "yfinance",
+                }
+                if asset_class == "crypto":
+                    base.update({
+                        "sector":             "Cryptocurrency",
+                        "circulating_supply": info.get("circulatingSupply"),
+                        "total_supply":       info.get("totalSupply"),
+                    })
+        except Exception:
+            pass   # will be filled by fast_info below
 
-            # Asset-class extras
-            if asset_class == "crypto":
-                base.update({
-                    "sector":            "Cryptocurrency",
-                    "circulating_supply": info.get("circulatingSupply"),
-                    "total_supply":       info.get("totalSupply"),
-                })
+        # ── Pass 2: fast_info — fills gaps (always fast, rarely rate-limited) ─
+        try:
+            fi = stock.fast_info
+            fi_price   = _v(getattr(fi, "last_price",      None) or
+                            getattr(fi, "previous_close",  None))
+            fi_mc      = getattr(fi, "market_cap",   None)
+            fi_curr    = getattr(fi, "currency",     None)
+            fi_yh      = _v(getattr(fi, "year_high", None))
+            fi_yl      = _v(getattr(fi, "year_low",  None))
 
-            return base
+            if not base:
+                # .info was empty — build a base from fast_info
+                base = self._minimal_info(ticker, asset_class)
+                base["_source"] = "yfinance_fast"
 
-        except Exception as e:
-            return self._minimal_info(ticker, asset_class, error=str(e))
+            # Patch in any missing / better values from fast_info
+            if not base.get("current_price") and fi_price:
+                base["current_price"] = fi_price
+            if not base.get("market_cap") and fi_mc:
+                base["market_cap"] = int(fi_mc)
+            if fi_curr:                              # currency from fast_info is authoritative
+                base["currency"] = fi_curr
+            if not base.get("52w_high") and fi_yh:
+                base["52w_high"] = fi_yh
+            if not base.get("52w_low") and fi_yl:
+                base["52w_low"] = fi_yl
+            if base.get("company") == ticker:       # name still unknown
+                exch = getattr(fi, "exchange", "")
+                if exch:
+                    base["company"] = f"{ticker} ({exch})"
+        except Exception:
+            pass
 
-    def _minimal_info(self, ticker: str, asset_class: str = "stock", error: str = "") -> dict:
+        return base if base else self._minimal_info(ticker, asset_class)
+
+    def _minimal_info(self, ticker: str, asset_class: str = "stock",
+                      error: str = "") -> dict:
         """Skeleton info when all sources fail."""
         return {
             "ticker": ticker, "company": ticker,
             "sector": asset_class.capitalize(), "industry": "N/A",
-            "market_cap": None, "current_price": None, "currency": "USD",
+            "market_cap": None, "current_price": None,
+            "currency": _infer_currency(ticker),
             "pe_ratio": None, "pb_ratio": None, "dividend_yield": None,
+            "roe": None, "roa": None, "net_margin": None,
             "52w_high": None, "52w_low": None, "beta": None,
             "analyst_target": None, "recommendation": "N/A",
             "description": "", "_source": "none", "_error": error,

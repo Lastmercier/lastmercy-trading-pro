@@ -626,16 +626,21 @@ def render_dashboard(A: dict):
 
     # ── Metric strip ──────────────────────────────────────────────────────────
     m1, m2, m3, m4, m5 = st.columns(5)
-    price_str  = f"{price:,.4g}" if price else "N/A"
+    _curr = info.get("currency", "")
+    _price_str = (f"{price:,.4g} {_curr}".strip() if price and _curr
+                  else f"{price:,.4g}" if price else "N/A")
     change_val = technicals.get("change_1d_pct") or 0
-    m1.metric("Price", price_str, delta=f"{change_val:.2f}%")
+    _delta_str = f"{change_val:+.2f}%" if change_val else None
+    m1.metric("Price", _price_str, delta=_delta_str)
     m2.metric("RSI(14)", technicals.get("rsi") or "—")
     if asset_class == "crypto":
         m3.metric("MC Rank",  f"#{info.get('market_cap_rank','—')}")
         m5.metric("ATH",      fmt_number(info.get("ath")))
     else:
-        m3.metric("P/E",      info.get("pe_ratio") or "—")
-        m5.metric("52W High", technicals.get("high_52w") or "—")
+        _pe = info.get("pe_ratio")
+        m3.metric("P/E", f"{_pe:.1f}" if isinstance(_pe, float) else "—")
+        _52h = technicals.get("high_52w") or info.get("52w_high")
+        m5.metric("52W High", f"{_52h:,.4g}" if _52h else "—")
     m4.metric("Market Cap", fmt_number(info.get("market_cap")))
 
     st.markdown("---")
@@ -714,17 +719,21 @@ def render_dashboard(A: dict):
 
         with rcol:
             st.markdown("#### Key Metrics")
+            _curr = info.get("currency", "")
+            _price_label = (f"{price:,.4g} {_curr}" if price and _curr
+                            else f"{price:,.4g}" if price else "N/A")
             kdf = {
-                "Current Price":   f"{price:,}" if price else "N/A",
+                "Current Price":   _price_label,
                 "Market Cap":      fmt_number(info.get("market_cap")),
-                "P/E Ratio":       info.get("pe_ratio", "N/A"),
-                "P/B Ratio":       info.get("pb_ratio", "N/A"),
+                "P/E Ratio":       info.get("pe_ratio") or "N/A",
+                "P/B Ratio":       info.get("pb_ratio") or "N/A",
                 "ROE":             pct(info.get("roe")),
                 "Net Margin":      pct(info.get("net_margin")),
-                "52W High":        technicals.get("high_52w", "N/A"),
-                "52W Low":         technicals.get("low_52w", "N/A"),
-                "Beta":            info.get("beta", "N/A"),
-                "Analyst Target":  info.get("analyst_target", "N/A"),
+                "52W High":        technicals.get("high_52w") or info.get("52w_high") or "N/A",
+                "52W Low":         technicals.get("low_52w") or info.get("52w_low") or "N/A",
+                "Beta":            info.get("beta") or "N/A",
+                "Analyst Target":  info.get("analyst_target") or "N/A",
+                "Dividend Yield":  pct(info.get("dividend_yield")) if info.get("dividend_yield") else "N/A",
             }
             st.dataframe(
                 pd.DataFrame(list(kdf.items()), columns=["Metric", "Value"]),
@@ -1467,9 +1476,11 @@ with st.status(f"📡 Fetching {ac_label} data for {ticker}...", expanded=False)
             state="error", expanded=False,
         )
     else:
+        _curr_label = info.get("currency", "")
+        _price_disp = f"{price:,.4g} {_curr_label}".strip() if price else "N/A"
         data_status.update(
             label=(
-                f"📡 {company} @ {price} {info.get('currency','USD')} "
+                f"📡 {company} @ {_price_disp}"
                 f"· {bars} bars · source: {src}"
             ),
             state="complete", expanded=False,
