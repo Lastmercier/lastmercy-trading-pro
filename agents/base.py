@@ -66,9 +66,9 @@ class BaseAgent:
         return Anthropic()
 
     @staticmethod
-    def _openai_client(base_url: str, api_key: str):
+    def _openai_client(base_url: str, api_key: str, timeout: float = 90.0):
         from openai import OpenAI
-        return OpenAI(base_url=base_url, api_key=api_key)
+        return OpenAI(base_url=base_url, api_key=api_key, timeout=timeout)
 
     # ── Public run methods ────────────────────────────────────────────────────
     def run(self, system: str, prompt: str, max_tokens: int = 1500) -> str:
@@ -118,14 +118,15 @@ class BaseAgent:
 
     # ── Groq (OpenAI-compatible, cloud, free) ─────────────────────────────────
     def _run_groq(self, system: str, prompt: str, max_tokens: int) -> str:
-        from openai import RateLimitError
-        client = self._openai_client(GROQ_BASE_URL, _get_groq_api_key())
+        from openai import RateLimitError, APITimeoutError, APIConnectionError
+        # 60-second hard timeout per request — prevents indefinite hangs
+        client = self._openai_client(GROQ_BASE_URL, _get_groq_api_key(), timeout=60.0)
         groq_model = _get_groq_model(self.model)
 
         # Groq free-tier limits:
         #   llama-3.3-70b-versatile : 6,000 TPM  · 30 RPM
         #   llama-3.1-8b-instant    : 20,000 TPM · 30 RPM
-        # Exponential backoff: 15s → 30s → 60s → 90s → 120s → 150s (7 attempts)
+        # Exponential backoff: 15s → 30s → 60s (7 attempts max)
         _BACKOFF = [15, 30, 60, 90, 120, 150]
         max_attempts = len(_BACKOFF) + 1   # 7 total
 
@@ -142,6 +143,13 @@ class BaseAgent:
                 self.last_output = resp.choices[0].message.content or ""
                 return self.last_output
             except RateLimitError:
+                if attempt < len(_BACKOFF):
+                    wait = _BACKOFF[attempt]
+                    time.sleep(wait)
+                else:
+                    raise
+            except (APITimeoutError, APIConnectionError):
+                # Network timeout / connection drop — retry with backoff
                 if attempt < len(_BACKOFF):
                     wait = _BACKOFF[attempt]
                     time.sleep(wait)

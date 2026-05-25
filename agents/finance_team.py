@@ -44,9 +44,11 @@ class Reese(BaseAgent):
         mcap_str = f"{_mcap:,}" if isinstance(_mcap, (int, float)) else "N/A"
 
         # Helper to format pct values
+        # NOTE: info dict stores margins/ROE already in percent form via _pct()
+        # e.g. roe=15.5 means 15.5%, do NOT multiply by 100 again.
         def _p(v):
             if v is None: return "N/A"
-            try: return f"{float(v)*100:.1f}%"
+            try: return f"{float(v):.1f}%"
             except: return str(v)
 
         prompt = f"""Write an institutional equity research brief on {ticker} ({info.get('company', ticker)}).

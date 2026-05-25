@@ -1604,9 +1604,20 @@ def _run_scout():
 with _TPE(max_workers=2) as _pool:
     _fw = _pool.submit(_run_wizard)
     _fs = _pool.submit(_run_scout) if ph_scout else None
-    research_output = _fw.result()
-    if _fs:
-        scan_output = _fs.result()
+    try:
+        research_output = _fw.result(timeout=150)
+    except Exception as _wiz_err:
+        research_output = (
+            f"⚠️ **Wizard analysis incomplete** ({type(_wiz_err).__name__})\n\n"
+            f"Groq อาจ rate-limited หรือ timeout — รายละเอียด: {_wiz_err}\n\n"
+            f"**วิธีแก้:** รอ 1-2 นาทีแล้ว Run Analysis ใหม่ หรือเปลี่ยนเป็น Anthropic API"
+        )
+        _ph_done(ph_wizard, "🔍", "Wizard")
+    try:
+        if _fs:
+            scan_output = _fs.result(timeout=120)
+    except Exception:
+        scan_output = ""
 
 _ph_done(ph_wizard, "🔍", "Wizard")
 if ph_scout:
@@ -1628,9 +1639,15 @@ def _run_trader():
 with _TPE(max_workers=2) as _pool:
     _fsage   = _pool.submit(_run_sage)
     _ftrader = _pool.submit(_run_trader) if ph_trader else None
-    critique_output = _fsage.result()
-    if _ftrader:
-        trade_card_text = _ftrader.result()
+    try:
+        critique_output = _fsage.result(timeout=120)
+    except Exception as _e:
+        critique_output = f"⚠️ Sage timeout/error ({type(_e).__name__}): {_e}"
+    try:
+        if _ftrader:
+            trade_card_text = _ftrader.result(timeout=120)
+    except Exception as _e:
+        trade_card_text = f"⚠️ Trader timeout/error: {_e}"
 
 _ph_done(ph_sage, "⚔️", "Sage")
 if ph_trader:
@@ -1652,9 +1669,15 @@ def _run_risk():
 with _TPE(max_workers=2) as _pool:
     _fpriest = _pool.submit(_run_priest)
     _frisk   = _pool.submit(_run_risk) if ph_risk else None
-    fact_check_output = _fpriest.result()
-    if _frisk:
-        risk_output = _frisk.result()
+    try:
+        fact_check_output = _fpriest.result(timeout=120)
+    except Exception as _e:
+        fact_check_output = f"⚠️ Priest timeout/error ({type(_e).__name__}): {_e}"
+    try:
+        if _frisk:
+            risk_output = _frisk.result(timeout=120)
+    except Exception as _e:
+        risk_output = f"⚠️ Risk agent timeout/error: {_e}"
 
 _ph_done(ph_priest, "✅", "Priest")
 if ph_risk:
