@@ -3,6 +3,7 @@ import sys
 import json
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
@@ -479,43 +480,100 @@ def render_mtf_grid(mtf_data: dict):
     st.markdown(html, unsafe_allow_html=True)
 
 
-def render_tradingview_chart(ticker: str, asset_class: str, market: str,
-                             height: int = 420):
-    """Embed a TradingView Advanced Real-Time Chart widget."""
-    import streamlit.components.v1 as components
-    tv_symbol = to_tradingview_symbol(ticker, asset_class, market)
-    widget_html = f"""
-<div class="tradingview-widget-container" style="height:{height}px;width:100%">
-  <div id="tv_chart_{ticker.replace('.','_').replace('-','_')}"
-       style="height:{height}px;width:100%"></div>
-  <script type="text/javascript"
-    src="https://s3.tradingview.com/tv.js"></script>
-  <script type="text/javascript">
-    new TradingView.widget({{
-      "container_id": "tv_chart_{ticker.replace('.','_').replace('-','_')}",
-      "autosize":     true,
-      "symbol":       "{tv_symbol}",
-      "interval":     "D",
-      "timezone":     "Asia/Bangkok",
-      "theme":        "light",
-      "style":        "1",
-      "locale":       "en",
-      "toolbar_bg":   "#f8fafc",
-      "enable_publishing":  false,
-      "hide_top_toolbar":   false,
-      "hide_legend":        false,
-      "save_image":         false,
-      "studies": [
-        "RSI@tv-basicstudies",
-        "MACD@tv-basicstudies"
-      ],
-      "show_popup_button":  true,
-      "popup_width":  "1000",
-      "popup_height": "650"
-    }});
-  </script>
-</div>"""
-    components.html(widget_html, height=height + 10, scrolling=False)
+def render_price_chart(A: dict):
+    """Render a Plotly OHLCV candlestick chart from stored chart_records."""
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+
+    records = A.get("chart_records", [])
+    if not records:
+        return
+
+    df = pd.DataFrame(records)
+    if df.empty or "Close" not in df.columns:
+        return
+
+    df["Date"] = pd.to_datetime(df["Date"])
+    n = len(df)
+    close = df["Close"]
+
+    # SMA overlays
+    sma20 = close.rolling(min(20, n)).mean() if n >= 10 else None
+    sma50 = close.rolling(min(50, n)).mean() if n >= 30 else None
+
+    has_volume = "Volume" in df.columns and df["Volume"].sum() > 0
+    rows = 2 if has_volume else 1
+    row_h = [0.75, 0.25] if has_volume else [1.0]
+
+    fig = make_subplots(
+        rows=rows, cols=1,
+        shared_xaxes=True,
+        row_heights=row_h,
+        vertical_spacing=0.04,
+    )
+
+    # ── Candlestick ──────────────────────────────────────────────────────────
+    fig.add_trace(go.Candlestick(
+        x=df["Date"],
+        open=df["Open"], high=df["High"],
+        low=df["Low"],   close=df["Close"],
+        name="Price",
+        increasing=dict(line=dict(color="#10b981"), fillcolor="#10b981"),
+        decreasing=dict(line=dict(color="#ef4444"), fillcolor="#ef4444"),
+    ), row=1, col=1)
+
+    # ── SMA 20 ───────────────────────────────────────────────────────────────
+    if sma20 is not None:
+        fig.add_trace(go.Scatter(
+            x=df["Date"], y=sma20,
+            name="SMA 20", line=dict(color="#3b82f6", width=1.3, dash="dot"),
+            opacity=0.8,
+        ), row=1, col=1)
+
+    # ── SMA 50 ───────────────────────────────────────────────────────────────
+    if sma50 is not None:
+        fig.add_trace(go.Scatter(
+            x=df["Date"], y=sma50,
+            name="SMA 50", line=dict(color="#f59e0b", width=1.3, dash="dash"),
+            opacity=0.8,
+        ), row=1, col=1)
+
+    # ── Volume ───────────────────────────────────────────────────────────────
+    if has_volume:
+        bar_colors = [
+            "#10b981" if c >= o else "#ef4444"
+            for c, o in zip(df["Close"], df["Open"])
+        ]
+        fig.add_trace(go.Bar(
+            x=df["Date"], y=df["Volume"],
+            name="Volume", marker_color=bar_colors, opacity=0.5,
+        ), row=2, col=1)
+
+    ticker  = A.get("ticker", "")
+    company = A.get("company", ticker)
+
+    fig.update_layout(
+        height=460,
+        margin=dict(l=8, r=8, t=36, b=8),
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#f8fafc",
+        xaxis_rangeslider_visible=False,
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.01, x=0,
+            font=dict(size=11),
+        ),
+        font=dict(size=11, color="#334155"),
+        title=dict(
+            text=f"<b>{ticker}</b> — {company}",
+            font=dict(size=13, color="#334155"), x=0.01,
+        ),
+        hovermode="x unified",
+    )
+    fig.update_xaxes(gridcolor="#e2e8f0", showgrid=True, zeroline=False)
+    fig.update_yaxes(gridcolor="#e2e8f0", showgrid=True, zeroline=False)
+
+    st.plotly_chart(fig, use_container_width=True,
+                    config={"displayModeBar": False})
 
 
 def render_etf_holdings(ticker: str):
@@ -525,7 +583,6 @@ def render_etf_holdings(ticker: str):
     if not holdings:
         st.caption("ℹ️ Holdings data not available for this ticker (works best for US ETFs like SPY, QQQ, VTI)")
         return
-    import pandas as pd
     df = pd.DataFrame(holdings)
     df.columns = ["Symbol", "Name", "Weight (%)"]
     st.dataframe(df, use_container_width=True, hide_index=True)
@@ -537,8 +594,6 @@ def render_dashboard(A: dict):
     from a stored analysis dict. Reads ONLY from `A` so it can repaint on any
     rerun (e.g. after a PDF-download click) without re-running the AI pipeline.
     """
-    import pandas as pd
-
     ticker            = A["ticker"]
     company           = A["company"]
     asset_class       = A["asset_class"]
@@ -625,14 +680,15 @@ def render_dashboard(A: dict):
 
     # ── Overview tab ─────────────────────────────────────────────────────────
     with tab_map["📊 Overview"]:
-        # ── TradingView Chart ─────────────────────────────────────────────
-        st.markdown(
-            '<div style="font-size:0.78rem;font-weight:700;letter-spacing:1px;'
-            'text-transform:uppercase;color:#64748b;margin-bottom:6px">'
-            '📈 LIVE CHART (TradingView)</div>',
-            unsafe_allow_html=True,
-        )
-        render_tradingview_chart(ticker, asset_class, market)
+        # ── Price Chart (Plotly OHLCV) ────────────────────────────────────
+        render_price_chart(A)
+        # TradingView full chart link (opens in new tab)
+        _tv_sym = to_tradingview_symbol(ticker, asset_class, market)
+        _tv_url = f"https://www.tradingview.com/chart/?symbol={_tv_sym}"
+        _lc, _ = st.columns([1, 3])
+        with _lc:
+            st.link_button("📈 Full Chart on TradingView ↗", url=_tv_url,
+                           use_container_width=True)
         st.markdown("---")
 
         scol, rcol = st.columns([1, 1])
@@ -1395,9 +1451,10 @@ if uncertain:
 with st.status(f"📡 Fetching {ac_label} data for {ticker}...", expanded=False) as data_status:
     md   = MarketData()
     data = md.get_all(ticker, asset_class)
-    info        = data["info"]
-    technicals  = data["technicals"]
-    news        = data["news"]
+    info          = data["info"]
+    technicals    = data["technicals"]
+    news          = data["news"]
+    chart_records = data.get("chart_records", [])
 
     company = info.get("company", ticker)
     price   = info.get("current_price") or technicals.get("current_price") or 0
@@ -1675,6 +1732,7 @@ st.session_state["analysis"] = {
     "technicals":        technicals,
     "news":              news,
     "mtf_data":          mtf_data,
+    "chart_records":     chart_records,
     "research_output":   research_output,
     "critique_output":   critique_output,
     "fact_check_output": fact_check_output,

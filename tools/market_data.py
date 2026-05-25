@@ -112,8 +112,18 @@ class MarketData:
             stock = yf.Ticker(ticker)
             info  = stock.info or {}
 
-            # yfinance sometimes returns an empty/stub dict
-            if not info.get("symbol") and not info.get("shortName") and not info.get("longName"):
+            # yfinance sometimes returns an empty/stub dict.
+            # Only bail out if there is truly nothing useful — if a price or
+            # marketCap is present, keep going even without a company name.
+            _raw_price = (info.get("currentPrice")
+                          or info.get("regularMarketPrice")
+                          or info.get("previousClose")
+                          or info.get("navPrice"))
+            _has_data = bool(
+                info.get("symbol") or info.get("shortName") or info.get("longName")
+                or _raw_price or info.get("marketCap") or info.get("quoteType")
+            )
+            if not _has_data:
                 return self._minimal_info(ticker, asset_class)
 
             base = {
@@ -221,9 +231,18 @@ class MarketData:
         close  = df["Close"]
         volume = df["Volume"] if "Volume" in df.columns else pd.Series(dtype=float)
 
-        last = df.iloc[-1]
-        prev = df.iloc[-2] if n > 1 else last
-        prev5 = df.iloc[-5] if n > 5 else df.iloc[0]
+        # ── Use last VALID (non-zero, non-NaN) bars ───────────────────────────
+        # yfinance sometimes returns 0 or NaN for the most recent bar (Thai stocks
+        # in off-hours, partial session, or API quirks). Skip bad tail rows.
+        valid_mask = close.notna() & (close > 0)
+        if valid_mask.any():
+            valid_df = df[valid_mask]
+        else:
+            valid_df = df  # fallback: use as-is
+
+        last  = valid_df.iloc[-1]
+        prev  = valid_df.iloc[-2]  if len(valid_df) >= 2 else valid_df.iloc[-1]
+        prev5 = valid_df.iloc[-5]  if len(valid_df) >= 5 else valid_df.iloc[0]
 
         # Last trading session date (strip timezone for clean display)
         try:
@@ -513,7 +532,31 @@ class MarketData:
         if not technicals.get("current_price") and info.get("current_price"):
             technicals["current_price"] = info["current_price"]
 
-        return {"info": info, "technicals": technicals, "news": news}
+        # OHLCV records for price chart (last 180 bars, JSON-safe)
+        chart_records: list = []
+        try:
+            ohlcv_df, _ = self.get_ohlcv_best_effort(ticker)
+            if not ohlcv_df.empty:
+                _cdf = ohlcv_df.copy().tail(180).reset_index()
+                # Normalise the date column name (yfinance 0.2+ uses "Date" or "Datetime")
+                date_col = "Date" if "Date" in _cdf.columns else _cdf.columns[0]
+                _cdf[date_col] = _cdf[date_col].astype(str).str[:10]
+                cols = [date_col, "Open", "High", "Low", "Close"]
+                if "Volume" in _cdf.columns:
+                    cols.append("Volume")
+                _cdf = _cdf[cols].rename(columns={date_col: "Date"})
+                # Drop any row where Close is 0 or NaN
+                _cdf = _cdf[_cdf["Close"].notna() & (_cdf["Close"] > 0)]
+                chart_records = _cdf.to_dict("records")
+        except Exception:
+            chart_records = []
+
+        return {
+            "info":          info,
+            "technicals":    technicals,
+            "news":          news,
+            "chart_records": chart_records,
+        }
 
 
 # ── Google News RSS (no API key) ──────────────────────────────────────────────
