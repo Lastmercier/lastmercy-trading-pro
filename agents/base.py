@@ -119,16 +119,15 @@ class BaseAgent:
     # ── Groq (OpenAI-compatible, cloud, free) ─────────────────────────────────
     def _run_groq(self, system: str, prompt: str, max_tokens: int) -> str:
         from openai import RateLimitError, APITimeoutError, APIConnectionError
-        # 60-second hard timeout per request — prevents indefinite hangs
-        client = self._openai_client(GROQ_BASE_URL, _get_groq_api_key(), timeout=60.0)
+        # 45-second hard timeout — if Groq hasn't responded in 45s it's not going to.
+        client = self._openai_client(GROQ_BASE_URL, _get_groq_api_key(), timeout=45.0)
         groq_model = _get_groq_model(self.model)
 
-        # Groq free-tier limits:
-        #   llama-3.3-70b-versatile : 6,000 TPM  · 30 RPM
-        #   llama-3.1-8b-instant    : 20,000 TPM · 30 RPM
-        # Exponential backoff: 15s → 30s → 60s (7 attempts max)
-        _BACKOFF = [15, 30, 60, 90, 120, 150]
-        max_attempts = len(_BACKOFF) + 1   # 7 total
+        # Retry ONLY on RateLimitError (429) — the API is working, just throttled.
+        # Timeout / connection errors are NOT retried (fail fast and show error).
+        # Backoff: 15s → 30s → 45s  (3 retries = 4 attempts max)
+        _BACKOFF = [15, 30, 45]
+        max_attempts = len(_BACKOFF) + 1   # 4 total
 
         for attempt in range(max_attempts):
             try:
@@ -143,19 +142,13 @@ class BaseAgent:
                 self.last_output = resp.choices[0].message.content or ""
                 return self.last_output
             except RateLimitError:
+                # Rate-limited: wait and retry
                 if attempt < len(_BACKOFF):
-                    wait = _BACKOFF[attempt]
-                    time.sleep(wait)
+                    time.sleep(_BACKOFF[attempt])
                 else:
                     raise
-            except (APITimeoutError, APIConnectionError):
-                # Network timeout / connection drop — retry with backoff
-                if attempt < len(_BACKOFF):
-                    wait = _BACKOFF[attempt]
-                    time.sleep(wait)
-                else:
-                    raise
-            except Exception:
+            except (APITimeoutError, APIConnectionError, Exception):
+                # Network / unknown error: fail immediately (don't retry)
                 raise
         return ""
 
