@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "investment-agent-pro",
+      "runtimeExecutable": "/bin/bash",
+      "runtimeArgs": ["/Users/lmcz/Desktop/Claude Investment/Investment Agent Pro/start.sh"],
+      "port": 8501
+    }
+  ]
+}

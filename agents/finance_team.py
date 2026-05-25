@@ -1,0 +1,212 @@
+import json
+from .base import BaseAgent, MODEL_FAST, MODEL_LITE
+
+# ── Wizard ────────────────────────────────────────────────────────────────────
+REESE_SYS = """You are a Managing Director at a bulge-bracket bank (Goldman Sachs / Morgan Stanley calibre) with 20 years covering equities.
+You write institutional research notes that portfolio managers stake real capital on.
+Non-negotiable rules:
+1. Every claim must cite a specific number from the data provided.
+2. Structure output with clear headers — no prose walls.
+3. Include a Scenario Table (Bull/Base/Bear) with explicit price targets AND probabilities.
+4. Quantify all risks (likelihood H/M/L × magnitude H/M/L).
+5. End with a single clear Recommendation line (rating · target · conviction).
+Output must read like an initiation note, not a summary."""
+
+# ── Sage ──────────────────────────────────────────────────────────────────────
+MAX_SYS = """You are a Partner at a top activist short-selling hedge fund (Muddy Waters / Hindenburg calibre).
+Your trade thesis has to survive a partner meeting and a compliance review.
+Non-negotiable rules:
+1. Open with one deadly-specific primary short thesis sentence.
+2. Enumerate exactly 3 bear cases — each with probability %, downside magnitude %, and the exact catalyst that triggers it.
+3. Identify at least one financial red flag with the precise metric and threshold that concerns you.
+4. Name the single biggest flaw in the bull thesis.
+5. Provide an explicit bear-case price target with a step-by-step path to reach it.
+Never write "there could be risks" — name the risk, size it, and date it."""
+
+# ── Priest ────────────────────────────────────────────────────────────────────
+VERA_SYS = """You are a Senior Research Integrity Officer at a Tier-1 asset manager.
+Your job: forensically audit every number and claim before the note goes to the portfolio committee.
+Rules:
+1. Cross-reference every cited metric against the raw data block.
+2. Flag mismatches as: [CORRECTION: stated X → actual Y].
+3. Score Data Confidence 1–10; deduct 1 point per unsupported claim or arithmetic error, explain each deduction.
+4. List any critical data gaps that would change the analysis.
+5. Final line: CLEARED FOR COMMITTEE / REQUIRES REVISION."""
+
+
+class Reese(BaseAgent):
+    def __init__(self):
+        super().__init__("Wizard", "🔍", "Research Analyst", MODEL_FAST)
+
+    def research(self, ticker: str, info: dict, technicals: dict, news: list) -> str:
+        news_lines = "\n".join(f"  • {n['title']} — {n['publisher']}" for n in news[:5])
+        _mcap = info.get('market_cap')
+        mcap_str = f"{_mcap:,}" if isinstance(_mcap, (int, float)) else "N/A"
+
+        # Helper to format pct values
+        def _p(v):
+            if v is None: return "N/A"
+            try: return f"{float(v)*100:.1f}%"
+            except: return str(v)
+
+        prompt = f"""Write an institutional equity research brief on {ticker} ({info.get('company', ticker)}).
+
+━━━ DATA BLOCK ━━━
+PRICE & MARKET:
+  Price {info.get('current_price')} {info.get('currency','USD')} | MCap {mcap_str}
+  Sector: {info.get('sector')} | Industry: {info.get('industry')}
+  52W High {info.get('52w_high')} / Low {info.get('52w_low')} | Beta {info.get('beta')}
+  Analyst Target {info.get('analyst_target')} ({info.get('recommendation','N/A')})
+
+VALUATION:
+  P/E {info.get('pe_ratio')} | Fwd P/E {info.get('forward_pe')} | P/B {info.get('pb_ratio')}
+  EV/EBITDA {info.get('ev_ebitda','N/A')} | PEG {info.get('peg_ratio','N/A')}
+
+QUALITY & GROWTH:
+  ROE {_p(info.get('roe'))} | Net Margin {_p(info.get('net_margin'))} | Op Margin {_p(info.get('operating_margin','N/A'))}
+  Revenue Growth {_p(info.get('revenue_growth'))} | Earnings Growth {_p(info.get('earnings_growth'))}
+  Debt/Equity {info.get('debt_equity')} | FCF {info.get('free_cashflow','N/A')}
+
+TECHNICALS:
+  RSI(14) {technicals.get('rsi')} | MACD Hist {technicals.get('macd_hist')} | ATR {technicals.get('atr')}
+  SMA20 {technicals.get('sma20')} | SMA50 {technicals.get('sma50')} | SMA200 {technicals.get('sma200')}
+  Volume {technicals.get('volume') or 0:,} vs 20D avg {technicals.get('avg_volume_20d') or 0:,} (×{technicals.get('volume_ratio')})
+  1D {technicals.get('change_1d_pct')}% | 5D {technicals.get('change_5d_pct')}%
+  BB Upper {technicals.get('bb_upper')} / Lower {technicals.get('bb_lower')}
+
+NEWS (last 5):
+{news_lines}
+━━━ END DATA ━━━
+
+REQUIRED OUTPUT — use these exact headers:
+
+## INVESTMENT THESIS
+Three specific, number-backed reasons to own or avoid this stock:
+1.
+2.
+3.
+
+## VALUATION
+- P/E {info.get('pe_ratio')} context: vs historical / sector peers → CHEAP / FAIR / EXPENSIVE
+- Implied upside to analyst target {info.get('analyst_target')}: ____%
+- Most important valuation risk: [1 sentence]
+
+## SCENARIO ANALYSIS
+Bull  (prob __%)  Target ___  |  Key catalyst:  |  Timeline:
+Base  (prob __%)  Target ___  |  Key catalyst:  |  Timeline:
+Bear  (prob __%)  Target ___  |  Key catalyst:  |  Timeline:
+
+## FINANCIAL QUALITY SCORECARD  (rate 1–5, give 1-line rationale)
+Revenue Growth ({_p(info.get('revenue_growth'))}):   __/5
+Profitability  ({_p(info.get('net_margin'))} margin): __/5
+Balance Sheet  (D/E {info.get('debt_equity')}):       __/5
+Capital Return (ROE {_p(info.get('roe'))}):           __/5
+
+## UPCOMING CATALYSTS  (next 60–90 days, 2–3 items)
+-
+-
+
+## TOP 3 RISKS
+1. Risk | Likelihood: H/M/L | Impact: H/M/L | Mitigant:
+2. Risk | Likelihood: H/M/L | Impact: H/M/L | Mitigant:
+3. Risk | Likelihood: H/M/L | Impact: H/M/L | Mitigant:
+
+## RECOMMENDATION
+Rating: STRONG BUY / BUY / HOLD / SELL / STRONG SELL
+12-Month Price Target: ___ {info.get('currency','USD')}  (____% upside/downside from {info.get('current_price')})
+Conviction: HIGH / MEDIUM / LOW
+Key monitor: [The one metric to watch most closely]"""
+
+        return self.run(REESE_SYS, prompt, max_tokens=1500)
+
+
+class Max(BaseAgent):
+    def __init__(self):
+        super().__init__("Sage", "⚔️", "Contrarian Critic", MODEL_LITE)
+
+    def critique(self, ticker: str, research: str) -> str:
+        prompt = f"""Wizard's research on {ticker}:
+{research[:1200]}
+
+Construct the most rigorous bear thesis possible using this framework:
+
+## PRIMARY SHORT THESIS
+[One sentence. Be specific. Include a number.]
+
+## BEAR CASE 1 — [Name this risk]
+Probability: __%  |  Downside if triggered: -__%  |  Trigger event: ___
+Supporting evidence (specific metrics): ___
+
+## BEAR CASE 2 — [Name this risk]
+Probability: __%  |  Downside if triggered: -__%  |  Trigger event: ___
+Supporting evidence: ___
+
+## BEAR CASE 3 — [Name this risk]
+Probability: __%  |  Downside if triggered: -__%  |  Trigger event: ___
+Supporting evidence: ___
+
+## FINANCIAL RED FLAGS
+List the specific metrics that concern you most (cite exact numbers from Wizard's data):
+-
+-
+
+## BULL THESIS VULNERABILITY
+What single assumption in Wizard's thesis is most likely to be wrong, and why?
+
+## BEAR PRICE TARGET
+Target: ___  |  Path: [2-step explanation with specific price levels]
+
+## SHORT SQUEEZE RISK (what kills the short thesis)
+Metric or event that would force covering: ___"""
+
+        return self.run(MAX_SYS, prompt, max_tokens=900)
+
+
+class Vera(BaseAgent):
+    def __init__(self):
+        super().__init__("Priest", "✅", "Fact Auditor", MODEL_LITE)
+
+    def fact_check(self, ticker: str, research: str, critique: str, info: dict, technicals: dict) -> str:
+        prompt = f"""Audit the research and critique for {ticker}.
+
+RESEARCH (excerpt):
+{research[:900]}
+
+CRITIQUE (excerpt):
+{critique[:500]}
+
+AUTHORITATIVE DATA REFERENCE:
+Price {info.get('current_price')} | P/E {info.get('pe_ratio')} | P/B {info.get('pb_ratio')} | MCap {info.get('market_cap')}
+RSI {technicals.get('rsi')} | SMA200 {technicals.get('sma200')} | ATR {technicals.get('atr')}
+52W High {info.get('52w_high')} | 52W Low {info.get('52w_low')}
+ROE {info.get('roe')} | Net Margin {info.get('net_margin')} | D/E {info.get('debt_equity')}
+Analyst Target {info.get('analyst_target')} | Revenue Growth {info.get('revenue_growth')}
+
+AUDIT OUTPUT — use exact headers:
+
+## VERIFIED CLAIMS
+List claims that are numerically accurate (cite data point):
+-
+-
+
+## CORRECTIONS REQUIRED
+Format: [CORRECTION: stated ___ → actual ___] + explanation
+-
+-
+
+## UNSUPPORTED ASSERTIONS
+Claims made without data backing (flag as [UNSUPPORTED]):
+-
+
+## CRITICAL DATA GAPS
+What important data was missing that would strengthen or overturn the thesis?
+-
+
+## DATA CONFIDENCE SCORE
+Score: __/10
+Deductions: [list each deduction and reason]
+
+## VERDICT
+CLEARED FOR COMMITTEE / REQUIRES REVISION — [1-sentence rationale]"""
+
+        return self.run(VERA_SYS, prompt, max_tokens=700)
