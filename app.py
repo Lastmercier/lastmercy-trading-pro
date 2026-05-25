@@ -15,6 +15,8 @@ load_dotenv()
 try:
     if "ANTHROPIC_API_KEY" in st.secrets and not os.environ.get("ANTHROPIC_API_KEY"):
         os.environ["ANTHROPIC_API_KEY"] = st.secrets["ANTHROPIC_API_KEY"]
+    if "GROQ_API_KEY" in st.secrets and not os.environ.get("GROQ_API_KEY"):
+        os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]
 except Exception:
     pass  # st.secrets not available in local dev — fine, .env is used instead
 
@@ -313,6 +315,9 @@ hr { border-color: #e2e8f0 !important; }
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def api_key_ok() -> bool:
     return bool(os.environ.get("ANTHROPIC_API_KEY", "").strip())
+
+def groq_key_ok() -> bool:
+    return bool(os.environ.get("GROQ_API_KEY", "").strip())
 
 
 def ollama_running(url: str = "http://localhost:11434") -> bool:
@@ -783,18 +788,28 @@ with st.sidebar:
     # ── Provider selection ────────────────────────────────────────────────────
     st.markdown("### 🤖 AI Provider")
     if _IS_CLOUD:
-        # On Streamlit Cloud, Ollama is not available — show Anthropic only
-        st.info("☁️ Running on Streamlit Cloud — Anthropic API only", icon="ℹ️")
-        provider_choice = "☁️ Anthropic Claude (API Key)"
+        _provider_options = [
+            "⚡ Groq (Free · Fast)",
+            "☁️ Anthropic Claude (API Key)",
+        ]
+        provider_choice = st.radio(
+            "Select AI Engine", _provider_options, index=0,
+            help="Groq is free and very fast. Anthropic gives the highest quality output.",
+        )
         use_ollama = False
     else:
+        _provider_options = [
+            "🦙 Ollama (Local · Free)",
+            "⚡ Groq (Cloud · Free)",
+            "☁️ Anthropic Claude (API Key)",
+        ]
         provider_choice = st.radio(
-            "Select AI Engine",
-            options=["🦙 Ollama (Local · Free)", "☁️ Anthropic Claude (API Key)"],
-            index=0,
-            help="Ollama runs 100% on your machine — no internet required, no cost.",
+            "Select AI Engine", _provider_options, index=0,
+            help="Ollama = local/free · Groq = cloud/free · Anthropic = best quality",
         )
         use_ollama = provider_choice.startswith("🦙")
+
+    use_groq = provider_choice.startswith("⚡")
 
     if use_ollama:
         os.environ["AI_PROVIDER"] = "ollama"
@@ -860,7 +875,22 @@ ollama pull llama3.1:8b   # alternative
 **Step 4 — Reload this page**
                 """)
 
-    else:
+    if use_groq:
+        os.environ["AI_PROVIDER"] = "groq"
+        if not groq_key_ok():
+            groq_key_input = st.text_input(
+                "🔑 Groq API Key",
+                type="password",
+                placeholder="gsk_...",
+                help="สมัครฟรีที่ console.groq.com — ไม่ต้องใส่บัตรเครดิต",
+            )
+            if groq_key_input:
+                os.environ["GROQ_API_KEY"] = groq_key_input.strip()
+        else:
+            st.success("Groq API Key loaded ✓", icon="⚡")
+        st.caption("Model: llama-3.3-70b · llama-3.1-8b-instant (fast tasks)")
+
+    elif not use_groq and not use_ollama:
         os.environ["AI_PROVIDER"] = "anthropic"
         if not api_key_ok():
             api_key_input = st.text_input(
@@ -1038,6 +1068,8 @@ ollama pull llama3.1:8b   # alternative
     ready = bool(ticker_input.strip() or pdf_file)
     if use_ollama:
         ready = ready and ollama_running() and bool(ollama_models())
+    elif use_groq:
+        ready = ready and groq_key_ok()
     else:
         ready = ready and api_key_ok()
 
@@ -1050,15 +1082,19 @@ ollama pull llama3.1:8b   # alternative
     if not ready:
         if use_ollama and not ollama_running():
             st.caption("⬆️ Start Ollama first, then enter a ticker")
+        elif use_groq and not groq_key_ok():
+            st.caption("⬆️ Enter your Groq API key above")
         elif not (ticker_input.strip() or pdf_file):
             st.caption("⬆️ Enter a ticker to get started")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
-_provider_badge = (
-    f"🦙 Ollama · {os.environ.get('OLLAMA_MODEL', 'local')}"
-    if use_ollama else "⚡ Claude Sonnet & Opus"
-)
+if use_ollama:
+    _provider_badge = f"🦙 Ollama · {os.environ.get('OLLAMA_MODEL', 'local')}"
+elif use_groq:
+    _provider_badge = "⚡ Groq · Llama 3.3 70B"
+else:
+    _provider_badge = "☁️ Claude Sonnet & Haiku"
 # Dynamic agent count: Joey(1) + Finance(3) + Trading(3) + IC(5/8/10)
 _ic_count  = {"quick": 5, "standard": 8, "deep": 10}.get(ic_mode, 8)
 _total_agents = 7 + _ic_count  # 12 / 15 / 17
@@ -1124,6 +1160,10 @@ if use_ollama:
     if not ollama_models():
         st.error("No Ollama models found. Please run `ollama pull qwen2.5:7b` then reload.", icon="❌")
         st.stop()
+elif use_groq:
+    if not groq_key_ok():
+        st.error("Groq API Key required. Please enter it in the sidebar.", icon="⚡")
+        st.stop()
 else:
     if not api_key_ok():
         st.error("Anthropic API Key required. Please enter it in the sidebar.", icon="🔑")
@@ -1142,9 +1182,15 @@ from tools.pdf_reader import extract_text
 ticker_raw = ticker_input.strip()
 
 _ic_agent_count = {"quick": 5, "standard": 8, "deep": 10}.get(ic_mode, 8)
-_est_min = (3 + _ic_agent_count) if use_ollama else 1
-_est_max = (8 + _ic_agent_count * 2) if use_ollama else 2
-_provider_tag = "Ollama · local model" if use_ollama else "Anthropic API · parallel"
+if use_ollama:
+    _est_min, _est_max = 3 + _ic_agent_count, 8 + _ic_agent_count * 2
+    _provider_tag = "Ollama · local model"
+elif use_groq:
+    _est_min, _est_max = 1, 3
+    _provider_tag = "Groq · Llama 3.3 70B · parallel"
+else:
+    _est_min, _est_max = 1, 2
+    _provider_tag = "Anthropic API · parallel"
 st.markdown(
     f'<div style="font-size:0.75rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;'
     f'color:#94a3b8;margin-bottom:4px">🔄 ANALYSIS PIPELINE</div>'

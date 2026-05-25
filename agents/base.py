@@ -1,6 +1,7 @@
 """
-BaseAgent — supports two providers:
+BaseAgent — supports three providers:
   • "anthropic"  → Anthropic SDK (Claude Sonnet / Opus)
+  • "groq"       → OpenAI-compatible SDK → Groq cloud (free, fast)
   • "ollama"     → OpenAI-compatible SDK → Ollama local server
 
 Provider is read from os.environ["AI_PROVIDER"] at call time,
@@ -8,19 +9,32 @@ so the sidebar can switch it without restarting the app.
 """
 
 import os
+import time
 from typing import Generator
 
-# ── Model constants ───────────────────────────────────────────────────────────
+# ── Model constants (Anthropic) ───────────────────────────────────────────────
 MODEL_FAST  = "claude-sonnet-4-6"
 MODEL_DEEP  = "claude-opus-4-7"
 MODEL_LITE  = "claude-haiku-4-5-20251001"
 
-# Ollama defaults (overridable via env)
-OLLAMA_DEFAULT_MODEL  = "qwen2.5:7b"
-OLLAMA_BASE_URL       = "http://localhost:11434/v1"
+# ── Groq ──────────────────────────────────────────────────────────────────────
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+
+# Map Anthropic model tiers → best Groq equivalents
+# MODEL_FAST / MODEL_DEEP → 70B (best quality on Groq free tier)
+# MODEL_LITE              → 8B instant  (fast, lightweight tasks)
+_GROQ_MODEL_MAP = {
+    MODEL_FAST: "llama-3.3-70b-versatile",
+    MODEL_DEEP: "llama-3.3-70b-versatile",
+    MODEL_LITE: "llama-3.1-8b-instant",
+}
+_GROQ_DEFAULT_MODEL = "llama-3.3-70b-versatile"
+
+# ── Ollama ────────────────────────────────────────────────────────────────────
+OLLAMA_DEFAULT_MODEL = "qwen2.5:7b"
+OLLAMA_BASE_URL      = "http://localhost:11434/v1"
 # Local models are slow — cap output tokens so each call finishes quickly.
-# Anthropic calls use the full max_tokens passed by each agent.
-_OLLAMA_MAX_TOKENS    = 280
+_OLLAMA_MAX_TOKENS   = 280
 
 
 def _get_provider() -> str:
@@ -29,6 +43,12 @@ def _get_provider() -> str:
 def _get_ollama_model() -> str:
     return os.environ.get("OLLAMA_MODEL", OLLAMA_DEFAULT_MODEL)
 
+def _get_groq_model(anthropic_model: str) -> str:
+    return _GROQ_MODEL_MAP.get(anthropic_model, _GROQ_DEFAULT_MODEL)
+
+def _get_groq_api_key() -> str:
+    return os.environ.get("GROQ_API_KEY", "")
+
 
 class BaseAgent:
     def __init__(self, name: str, emoji: str, description: str,
@@ -36,32 +56,36 @@ class BaseAgent:
         self.name        = name
         self.emoji       = emoji
         self.description = description
-        self.model       = model          # used only for Anthropic
+        self.model       = model
         self.last_output = ""
 
-    # ── Internal clients (created lazily) ────────────────────────────────────
+    # ── Internal clients ─────────────────────────────────────────────────────
     @staticmethod
     def _anthropic_client():
         from anthropic import Anthropic
         return Anthropic()
 
     @staticmethod
-    def _openai_client():
+    def _openai_client(base_url: str, api_key: str):
         from openai import OpenAI
-        return OpenAI(
-            base_url=os.environ.get("OLLAMA_URL", OLLAMA_BASE_URL),
-            api_key="ollama",               # Ollama ignores this but SDK requires it
-        )
+        return OpenAI(base_url=base_url, api_key=api_key)
 
     # ── Public run methods ────────────────────────────────────────────────────
     def run(self, system: str, prompt: str, max_tokens: int = 1500) -> str:
-        if _get_provider() == "ollama":
+        provider = _get_provider()
+        if provider == "groq":
+            return self._run_groq(system, prompt, max_tokens)
+        if provider == "ollama":
             return self._run_ollama(system, prompt, min(max_tokens, _OLLAMA_MAX_TOKENS))
         return self._run_anthropic(system, prompt, max_tokens)
 
     def stream_run(self, system: str, prompt: str,
                    max_tokens: int = 1500) -> Generator[str, None, None]:
-        if _get_provider() == "ollama":
+        provider = _get_provider()
+        if provider == "groq":
+            # Groq doesn't need streaming — return full response as one chunk
+            yield self._run_groq(system, prompt, max_tokens)
+        elif provider == "ollama":
             yield from self._stream_ollama(system, prompt, max_tokens)
         else:
             yield from self._stream_anthropic(system, prompt, max_tokens)
@@ -92,9 +116,38 @@ class BaseAgent:
                 self.last_output += text
                 yield text
 
-    # ── Ollama (OpenAI-compatible) ────────────────────────────────────────────
+    # ── Groq (OpenAI-compatible, cloud, free) ─────────────────────────────────
+    def _run_groq(self, system: str, prompt: str, max_tokens: int) -> str:
+        from openai import RateLimitError
+        client = self._openai_client(GROQ_BASE_URL, _get_groq_api_key())
+        groq_model = _get_groq_model(self.model)
+
+        for attempt in range(4):
+            try:
+                resp = client.chat.completions.create(
+                    model=groq_model,
+                    max_tokens=max_tokens,
+                    messages=[
+                        {"role": "system", "content": system},
+                        {"role": "user",   "content": prompt},
+                    ],
+                )
+                self.last_output = resp.choices[0].message.content or ""
+                return self.last_output
+            except RateLimitError:
+                if attempt < 3:
+                    time.sleep(8 * (attempt + 1))   # 8s · 16s · 24s backoff
+                else:
+                    raise
+            except Exception:
+                raise
+        return ""
+
+    # ── Ollama (OpenAI-compatible, local) ─────────────────────────────────────
     def _run_ollama(self, system: str, prompt: str, max_tokens: int) -> str:
-        client = self._openai_client()
+        client = self._openai_client(
+            os.environ.get("OLLAMA_URL", OLLAMA_BASE_URL), "ollama"
+        )
         resp = client.chat.completions.create(
             model=_get_ollama_model(),
             max_tokens=max_tokens,
@@ -108,7 +161,9 @@ class BaseAgent:
 
     def _stream_ollama(self, system: str, prompt: str,
                        max_tokens: int) -> Generator[str, None, None]:
-        client = self._openai_client()
+        client = self._openai_client(
+            os.environ.get("OLLAMA_URL", OLLAMA_BASE_URL), "ollama"
+        )
         self.last_output = ""
         stream = client.chat.completions.create(
             model=_get_ollama_model(),
