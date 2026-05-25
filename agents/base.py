@@ -122,7 +122,14 @@ class BaseAgent:
         client = self._openai_client(GROQ_BASE_URL, _get_groq_api_key())
         groq_model = _get_groq_model(self.model)
 
-        for attempt in range(4):
+        # Groq free-tier limits:
+        #   llama-3.3-70b-versatile : 6,000 TPM  · 30 RPM
+        #   llama-3.1-8b-instant    : 20,000 TPM · 30 RPM
+        # Exponential backoff: 15s → 30s → 60s → 90s → 120s → 150s (7 attempts)
+        _BACKOFF = [15, 30, 60, 90, 120, 150]
+        max_attempts = len(_BACKOFF) + 1   # 7 total
+
+        for attempt in range(max_attempts):
             try:
                 resp = client.chat.completions.create(
                     model=groq_model,
@@ -135,8 +142,9 @@ class BaseAgent:
                 self.last_output = resp.choices[0].message.content or ""
                 return self.last_output
             except RateLimitError:
-                if attempt < 3:
-                    time.sleep(8 * (attempt + 1))   # 8s · 16s · 24s backoff
+                if attempt < len(_BACKOFF):
+                    wait = _BACKOFF[attempt]
+                    time.sleep(wait)
                 else:
                     raise
             except Exception:

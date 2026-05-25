@@ -209,6 +209,11 @@ class ICAgent(BaseAgent):
         self.title = config["title"]
 
     def analyze(self, ticker: str, context: str, max_tokens: int = 500) -> str:
+        from .base import _get_provider
+        # Groq free tier: 6k TPM (llama-3.3-70b) / 20k TPM (llama-3.1-8b)
+        # Cap output tokens for voting agents to avoid burst rate limits
+        if _get_provider() == "groq" and max_tokens > 350:
+            max_tokens = 350
         prompt = (
             f"Asset under review: **{ticker}**\n\n"
             f"RESEARCH & DATA CONTEXT:\n{context}\n\n"
@@ -281,7 +286,9 @@ class InvestmentCommittee:
 
         # ── Build synthesis context in roster order for CFA PM ────────────────
         from .base import _get_provider
-        _ollama = _get_provider() == "ollama"
+        _provider = _get_provider()
+        _ollama   = _provider == "ollama"
+        _groq     = _provider == "groq"
 
         n_voting   = sum(len(v) for v in vote_tally.values())
         tally_line = (
@@ -290,11 +297,25 @@ class InvestmentCommittee:
             f"HOLD {len(vote_tally['HOLD'])} / "
             f"SELL {len(vote_tally['SELL'])}"
         )
-        # Truncate research context for Ollama to stay within its context window
-        _ctx_cap = 800 if _ollama else len(research_context)
+
+        # Context caps to stay within token limits:
+        #   Ollama  : very tight  (small context window, slow)
+        #   Groq    : moderate    (6k TPM on llama-3.3-70b used by CFA PM)
+        #   Anthropic: full
+        if _ollama:
+            _ctx_cap = 800
+            _out_cap = 300
+            _pm_max_tokens = 500
+        elif _groq:
+            _ctx_cap = 1200   # ~300 tokens of research context
+            _out_cap = 450    # ~115 tokens per agent × max 9 = ~1035 tokens
+            _pm_max_tokens = 600
+        else:
+            _ctx_cap = len(research_context)
+            _out_cap = 9999
+            _pm_max_tokens = 700
+
         synthesis = research_context[:_ctx_cap] + "\n\n═══ IC COMMITTEE INPUTS ═══\n"
-        # Per-agent output cap: Ollama 300 chars, Anthropic full
-        _out_cap = 300 if _ollama else 9999
         for agent in voting_agents:          # preserve roster order
             data     = results[agent.name]
             vote_tag = f"  [VOTE: {data['vote']}]" if data.get("vote") else ""
@@ -305,7 +326,7 @@ class InvestmentCommittee:
         # ── CFA PM — final synthesis ──────────────────────────────────────────
         if on_agent_start:
             on_agent_start(final_agent.name)
-        final_output = final_agent.analyze(ticker, synthesis, max_tokens=700)
+        final_output = final_agent.analyze(ticker, synthesis, max_tokens=_pm_max_tokens)
         results[final_agent.name] = {
             "emoji":  final_agent.emoji,
             "title":  final_agent.title,

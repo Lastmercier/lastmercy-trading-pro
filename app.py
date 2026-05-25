@@ -1041,6 +1041,13 @@ ollama pull llama3.1:8b   # alternative
         else:
             st.success("Groq API Key loaded ✓", icon="⚡")
         st.caption("Model: llama-3.3-70b · llama-3.1-8b-instant (fast tasks)")
+        st.info(
+            "⚠️ **Groq Free Tier limits:**\n"
+            "- 30 req/min · 6k tokens/min\n"
+            "- IC Committee ใช้ tokens เยอะ → แนะนำ **quick (5 agents)**\n"
+            "- ถ้า error ให้รอ 2-3 นาทีแล้วลองใหม่",
+            icon="⚡",
+        )
 
     elif not use_groq and not use_ollama:
         os.environ["AI_PROVIDER"] = "anthropic"
@@ -1724,7 +1731,23 @@ with ic_col:
                     unsafe_allow_html=True,
                 )
 
-        ic_results = ic.run(ticker, ic_context, on_agent_start=on_start, on_agent_done=on_done)
+        try:
+            ic_results = ic.run(ticker, ic_context, on_agent_start=on_start, on_agent_done=on_done)
+        except Exception as _ic_err:
+            _err_str = str(_ic_err)
+            if "RateLimit" in _err_str or "rate_limit" in _err_str.lower() or "429" in _err_str:
+                st.error(
+                    "⚡ **Groq Rate Limit reached**\n\n"
+                    "IC Committee ส่ง request ไปมากเกินไปในช่วงเวลาสั้น\n\n"
+                    "**วิธีแก้:**\n"
+                    "1. เปลี่ยน IC Depth เป็น **quick (5 agents)**\n"
+                    "2. รอ **2-3 นาที** แล้วกด Run Analysis ใหม่\n"
+                    "3. หรือเปลี่ยนไปใช้ Anthropic API",
+                    icon="⚡",
+                )
+            else:
+                st.error(f"IC Committee error: {_ic_err}", icon="❌")
+            ic_results = {}
     else:
         st.info("IC Committee skipped (short-term mode selected)", icon="⏭️")
 
