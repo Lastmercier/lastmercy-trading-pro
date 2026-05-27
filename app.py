@@ -1519,18 +1519,25 @@ with st.sidebar:
         label_visibility="collapsed",
         key="page_nav",
     )
-    # ── Data persistence hint ────────────────────────────────────────────────
-    # UID is generated lazily (first write/load operation).
-    # We show a static hint here; the URL is stamped with the UID in the
-    # main execution block (after the sidebar closes) via write_uid_to_url().
-    st.markdown(
-        '<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;'
-        'padding:7px 12px;font-size:0.72rem;color:#0369a1;margin-bottom:2px">'
-        '💾 <b>Data saves to this session.</b> After running an analysis, '
-        'bookmark the URL to restore your Trade Log &amp; History later.'
-        '</div>',
-        unsafe_allow_html=True,
-    )
+    # ── Data persistence: bookmark link ──────────────────────────────────────
+    # get_uid() only READS (never writes st.query_params → no rerun triggered).
+    # The link_button navigates to ?uid=xxx via normal browser navigation —
+    # no Streamlit rerun loop, no spinner.
+    try:
+        from tools.persistence import get_uid as _sb_get_uid
+        _sb_uid = _sb_get_uid()
+        st.markdown(
+            f'<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;'
+            f'padding:7px 12px;font-size:0.72rem;color:#0369a1;margin-bottom:4px">'
+            f'💾 <b>Data saves to this session.</b><br>'
+            f'Click the button below then bookmark that URL to restore your '
+            f'Trade Log &amp; History on return visits.</div>',
+            unsafe_allow_html=True,
+        )
+        st.link_button("🔗 Get my data URL", url=f"?uid={_sb_uid}",
+                       use_container_width=True)
+    except Exception:
+        pass
     st.markdown('<hr style="margin:10px 0 14px;border-color:#e2e8f0">', unsafe_allow_html=True)
 
     # ── Provider selection ────────────────────────────────────────────────────
@@ -1912,17 +1919,6 @@ ollama pull llama3.1:8b   # alternative
             st.caption("⬆️ Enter your Groq API key above")
         elif not (ticker_input.strip() or pdf_file):
             st.caption("⬆️ Enter a ticker to get started")
-
-
-# ── Persistence: stamp UID into the URL (safe — sidebar is fully rendered) ────
-# This runs once per session on first visit (when no ?uid= is in the URL).
-# It triggers ONE extra rerun; on that rerun the UID is already in
-# session_state so write_uid_to_url() skips the write and no further reruns occur.
-try:
-    from tools.persistence import get_uid as _p_get_uid, write_uid_to_url as _p_write_uid
-    _p_write_uid(_p_get_uid())
-except Exception:
-    pass
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────

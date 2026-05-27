@@ -17,28 +17,26 @@ New architecture
                        Cleared only on server restart (deploy / idle
                        shutdown on Community Cloud ~every 24-48 h).
 
-  st.query_params["uid"] — 12-char hex UUID written to the browser URL.
-                           Survives browser close + reopen IF the user
-                           returns via a bookmark or browser history.
-                           On a new device / incognito, a fresh UID is
-                           generated automatically.
+  ?uid=<id> in URL   — 12-char hex UUID.  Only written to the URL when
+                       the user explicitly clicks the "Get my data URL"
+                       button in the sidebar.  No automatic st.query_params
+                       writes → no unwanted reruns → no spinner loops.
 
-  JSON export / import   — true long-term backup across server restarts.
-                           Users should download their JSON and re-import
-                           after a server restart.
+  JSON export/import — true long-term backup across server restarts.
 
 Flow on first visit
 ───────────────────
-  1. get_uid() generates a new UID, writes ?uid=<uid> to the URL.
-  2. ensure_loaded() / ensure_history_loaded() load "[]" (empty) from
-     the cache (first visit → nothing there yet).
+  1. get_uid() generates a new UID, stores it in st.session_state only.
+  2. ensure_loaded() loads "[]" (empty) — nothing saved yet.
   3. After analysis / logging, save() writes data for that UID.
+  4. User clicks "Get my data URL" in the sidebar → browser navigates
+     to ?uid=<id>.  From that point the URL contains the UID.
 
-Flow on return visit (same server process)
-──────────────────────────────────────────
-  1. Browser reopens the bookmarked URL → ?uid=<uid> is in the URL.
-  2. get_uid() reads the UID from st.query_params, no new UID generated.
-  3. ensure_loaded() reads the stored JSON from the cache → data appears.
+Flow on return visit (bookmarked ?uid=<id> URL)
+───────────────────────────────────────────────
+  1. get_uid() reads UID from st.query_params (no session_state write
+     needed, query_params read is always safe).
+  2. ensure_loaded() reads stored JSON from cache → data appears.
 """
 
 from __future__ import annotations
@@ -65,16 +63,13 @@ def get_uid() -> str:
     Return (and create if needed) this browser session's user UID.
 
     Priority:
-      1. st.session_state["_uid"]  — fastest; cached within the session
-      2. st.query_params["uid"]    — user returned via a bookmarked URL
-      3. Generate new UID and store in session_state only
+      1. st.session_state["_uid"]  — cached within the session (fastest)
+      2. st.query_params["uid"]    — user returned via bookmarked URL
+      3. Generate new UID, store in session_state only
 
-    NOTE: We intentionally do NOT write back to st.query_params here.
-    Setting st.query_params triggers a full Streamlit rerun, which can
-    cause a rerun loop if called during early script execution.
-    The UID is written to the URL lazily via _write_uid_to_url() which
-    should only be called from safe locations (e.g. sidebar button handlers
-    or after the first successful persistence write).
+    NEVER writes to st.query_params here — that would trigger a Streamlit
+    rerun and can cause an infinite spinner loop on Community Cloud.
+    The UID reaches the URL only when the user clicks the sidebar button.
     """
     if "_uid" in st.session_state:
         return st.session_state["_uid"]
@@ -90,22 +85,6 @@ def get_uid() -> str:
 
     st.session_state["_uid"] = uid
     return uid
-
-
-def write_uid_to_url(uid: str) -> None:
-    """
-    Write the UID into the browser URL (st.query_params).
-
-    ONLY call this from a safe context — e.g. after the sidebar has fully
-    rendered, or inside an 'if st.button(...)' block.  Writing to
-    st.query_params triggers a rerun; calling it mid-render can loop.
-    """
-    try:
-        existing = st.query_params.get("uid") or ""
-        if existing != uid:
-            st.query_params["uid"] = uid
-    except Exception:
-        pass
 
 
 # ── Read / write ──────────────────────────────────────────────────────────────
