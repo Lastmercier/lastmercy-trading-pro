@@ -881,6 +881,7 @@ def render_dashboard(A: dict):
     ticker            = A["ticker"]
     company           = A["company"]
     asset_class       = A["asset_class"]
+    market            = A.get("market", "")      # needed for TradingView link
     info              = A["info"]
     technicals        = A["technicals"]
     news              = A["news"]
