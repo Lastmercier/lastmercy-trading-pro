@@ -65,26 +65,47 @@ def get_uid() -> str:
     Return (and create if needed) this browser session's user UID.
 
     Priority:
-      1. st.session_state["_uid"]  — fastest, within the same session
-      2. st.query_params["uid"]    — URL contains a previous UID
-      3. Generate new UID, write to URL so user can bookmark it
+      1. st.session_state["_uid"]  — fastest; cached within the session
+      2. st.query_params["uid"]    — user returned via a bookmarked URL
+      3. Generate new UID and store in session_state only
 
-    After the first call the UID is cached in session_state, so
-    subsequent calls are essentially free (no query_params access).
+    NOTE: We intentionally do NOT write back to st.query_params here.
+    Setting st.query_params triggers a full Streamlit rerun, which can
+    cause a rerun loop if called during early script execution.
+    The UID is written to the URL lazily via _write_uid_to_url() which
+    should only be called from safe locations (e.g. sidebar button handlers
+    or after the first successful persistence write).
     """
     if "_uid" in st.session_state:
         return st.session_state["_uid"]
 
-    uid: str = st.query_params.get("uid", "") or ""
+    uid: str = ""
+    try:
+        uid = st.query_params.get("uid") or ""
+    except Exception:
+        pass
+
     if not uid:
         uid = _uuid.uuid4().hex[:12]
-        try:
-            st.query_params["uid"] = uid
-        except Exception:
-            pass   # should never fail in modern Streamlit
 
     st.session_state["_uid"] = uid
     return uid
+
+
+def write_uid_to_url(uid: str) -> None:
+    """
+    Write the UID into the browser URL (st.query_params).
+
+    ONLY call this from a safe context — e.g. after the sidebar has fully
+    rendered, or inside an 'if st.button(...)' block.  Writing to
+    st.query_params triggers a rerun; calling it mid-render can loop.
+    """
+    try:
+        existing = st.query_params.get("uid") or ""
+        if existing != uid:
+            st.query_params["uid"] = uid
+    except Exception:
+        pass
 
 
 # ── Read / write ──────────────────────────────────────────────────────────────
