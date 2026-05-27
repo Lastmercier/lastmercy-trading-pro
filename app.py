@@ -1519,23 +1519,33 @@ with st.sidebar:
         label_visibility="collapsed",
         key="page_nav",
     )
-    # ── Data persistence: bookmark link ──────────────────────────────────────
-    # get_uid() only READS (never writes st.query_params → no rerun triggered).
-    # The link_button navigates to ?uid=xxx via normal browser navigation —
-    # no Streamlit rerun loop, no spinner.
+    # ── Data persistence ─────────────────────────────────────────────────────
     try:
-        from tools.persistence import get_uid as _sb_get_uid
-        _sb_uid = _sb_get_uid()
-        st.markdown(
-            f'<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;'
-            f'padding:7px 12px;font-size:0.72rem;color:#0369a1;margin-bottom:4px">'
-            f'💾 <b>Data saves to this session.</b><br>'
-            f'Click the button below then bookmark that URL to restore your '
-            f'Trade Log &amp; History on return visits.</div>',
-            unsafe_allow_html=True,
-        )
-        st.link_button("🔗 Get my data URL", url=f"?uid={_sb_uid}",
-                       use_container_width=True)
+        from tools.persistence import get_uid as _sb_uid_fn
+        _sb_uid = _sb_uid_fn()
+        _uid_in_url = (st.query_params.get("uid", "") == _sb_uid)
+        if _uid_in_url:
+            # User already has the correct URL — show confirmation
+            st.markdown(
+                '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;'
+                'padding:7px 12px;font-size:0.72rem;color:#15803d;margin-bottom:4px">'
+                '✅ <b>Data URL active.</b> Bookmark this page — your Trade Log '
+                '&amp; History will be here on your next visit.</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            # First visit or plain URL — prompt user to lock in their UID
+            st.markdown(
+                '<div style="background:#fef9c3;border:1px solid #fde047;border-radius:8px;'
+                'padding:7px 12px;font-size:0.72rem;color:#854d0e;margin-bottom:4px">'
+                '💡 <b>Save your data:</b> click below to stamp your ID into the URL, '
+                'then <b>bookmark</b> it to restore Trade Log &amp; History later.</div>',
+                unsafe_allow_html=True,
+            )
+            if st.button("💾 Lock Data to This URL",
+                         use_container_width=True, key="save_uid_btn"):
+                # Update URL in current tab — triggers one rerun, then stops
+                st.query_params["uid"] = _sb_uid
     except Exception:
         pass
     st.markdown('<hr style="margin:10px 0 14px;border-color:#e2e8f0">', unsafe_allow_html=True)
@@ -1957,15 +1967,15 @@ if _page == "📜 History":
     st.stop()
 
 # ── Pre-load server-side cache → session_state (Analysis page) ───────────────
-# Loads Trade Log and History from st.cache_resource exactly once per session.
-# Always completes immediately (no JS first-render delay).
-if not st.session_state.get("_tl_loaded"):
-    from tools.trade_log import ensure_loaded as _tl_preload
-    _tl_preload()
-
-if not st.session_state.get("_hist_loaded"):
-    from tools.analysis_history import ensure_history_loaded as _hist_preload
-    _hist_preload()
+try:
+    if not st.session_state.get("_tl_loaded"):
+        from tools.trade_log import ensure_loaded as _tl_preload
+        _tl_preload()
+    if not st.session_state.get("_hist_loaded"):
+        from tools.analysis_history import ensure_history_loaded as _hist_preload
+        _hist_preload()
+except Exception:
+    pass
 
 # ── Cached render ─────────────────────────────────────────────────────────────
 # If the user isn't launching a new run but a previous analysis exists (e.g. the
