@@ -106,19 +106,31 @@ _LS_KEY = "lastmercy_history"
 
 
 def write_history_localstorage(history: list[HistoryRecord]) -> None:
-    """Write history to localStorage via zero-height iframe script."""
-    data = history_to_json(history)
-    st.components.v1.html(
-        f"""<script>
-        try {{
-            localStorage.setItem({json.dumps(_LS_KEY)}, {json.dumps(data)});
-        }} catch(e) {{
-            console.warn('[History] localStorage write failed:', e);
-        }}
-        </script>""",
-        height=0,
-        scrolling=False,
-    )
+    """
+    Write history to localStorage.
+
+    Same approach as trade_log.write_localstorage — uses st_javascript
+    instead of st.components.v1.html(height=0).  Zero-height iframes are
+    silently skipped by most browsers, so scripts inside them never run.
+    st_javascript renders a proper (but invisible) Streamlit component
+    that reliably executes JavaScript.
+
+    Hash-based key: new component (→ JS re-runs) only when data changes.
+    """
+    import hashlib
+    data  = history_to_json(history)
+    _key  = "hist_w_" + hashlib.md5(data.encode()).hexdigest()[:8]
+    try:
+        from streamlit_javascript import st_javascript
+        st_javascript(
+            f"(()=>{{try{{localStorage.setItem({json.dumps(_LS_KEY)},{json.dumps(data)});}}catch(e){{console.warn('[Hist write]',e);}}return 1;}})()",
+            key=_key,
+        )
+    except ImportError:
+        st.components.v1.html(
+            f"<script>try{{localStorage.setItem({json.dumps(_LS_KEY)},{json.dumps(data)});}}catch(e){{console.warn(e);}}</script>",
+            height=30,
+        )
 
 
 def read_history_localstorage() -> Optional[str]:
@@ -146,8 +158,12 @@ def ensure_history_loaded() -> bool:
         return False  # first render — wait
 
     loaded = history_from_json(raw)
-    if loaded and not st.session_state.get(_SS_KEY):
-        st.session_state[_SS_KEY] = loaded
+    current = st.session_state.get(_SS_KEY) or []
+    if loaded:
+        # Merge: keep current-session records AND historical records (by id)
+        current_ids = {r.id for r in current}
+        merged = current + [r for r in loaded if r.id not in current_ids]
+        st.session_state[_SS_KEY] = merged[:200]
     else:
         st.session_state.setdefault(_SS_KEY, [])
 

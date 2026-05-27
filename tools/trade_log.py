@@ -114,19 +114,33 @@ _LS_KEY = "lastmercy_trades"
 
 
 def write_localstorage(trades: list[TradeRecord]) -> None:
-    """Write trades to browser localStorage via a zero-height iframe script."""
-    data = trades_to_json(trades)
-    st.components.v1.html(
-        f"""<script>
-        try {{
-            localStorage.setItem({json.dumps(_LS_KEY)}, {json.dumps(data)});
-        }} catch(e) {{
-            console.warn('[TradeLog] localStorage write failed:', e);
-        }}
-        </script>""",
-        height=0,
-        scrolling=False,
-    )
+    """
+    Write trades to localStorage.
+
+    Uses st_javascript (the same mechanism as reads) because
+    st.components.v1.html(height=0) silently fails on many browsers —
+    zero-height iframes are optimised away before their scripts execute.
+
+    A short hash of the data is used as the component key so Streamlit
+    creates a fresh component (and re-runs the JS) whenever the data
+    actually changes, without spinning up a new component on every render
+    when nothing has changed.
+    """
+    import hashlib
+    data  = trades_to_json(trades)
+    _key  = "tl_w_" + hashlib.md5(data.encode()).hexdigest()[:8]
+    try:
+        from streamlit_javascript import st_javascript
+        st_javascript(
+            f"(()=>{{try{{localStorage.setItem({json.dumps(_LS_KEY)},{json.dumps(data)});}}catch(e){{console.warn('[TL write]',e);}}return 1;}})()",
+            key=_key,
+        )
+    except ImportError:
+        # Fallback (less reliable but works when package is missing)
+        st.components.v1.html(
+            f"<script>try{{localStorage.setItem({json.dumps(_LS_KEY)},{json.dumps(data)});}}catch(e){{console.warn(e);}}</script>",
+            height=30,
+        )
 
 
 def read_localstorage() -> Optional[str]:
@@ -160,10 +174,12 @@ def ensure_loaded() -> bool:
         return False  # first render — JS hasn't responded yet
 
     loaded = trades_from_json(raw)
+    current = st.session_state.get(_SS_KEY) or []
     if loaded:
-        # Only overwrite if session_state is empty (don't clobber a just-logged trade)
-        if not st.session_state.get(_SS_KEY):
-            st.session_state[_SS_KEY] = loaded
+        # Merge: keep current-session trades AND historical trades (by id)
+        current_ids = {t.id for t in current}
+        merged = current + [t for t in loaded if t.id not in current_ids]
+        st.session_state[_SS_KEY] = merged
     else:
         st.session_state.setdefault(_SS_KEY, [])
 

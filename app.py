@@ -1952,6 +1952,23 @@ if _page == "📜 History":
     render_history()
     st.stop()
 
+# ── Pre-load localStorage → session_state (Analysis page) ────────────────────
+# Trade Log and History pages call ensure_loaded() internally (with st.rerun()
+# fallback).  On the Analysis page we pre-load silently here so that by the
+# time the user clicks "Run Analysis" or "Log Trade" (= second+ render),
+# session_state already contains ALL previous-session data.  Writes then
+# include the full merged set, not just the current-session subset.
+#
+# First render: st_javascript returns None → flags stay False → no crash.
+# Second render (any interaction): st_javascript resolves → data merged in.
+if not st.session_state.get("_tl_loaded"):
+    from tools.trade_log import ensure_loaded as _tl_preload
+    _tl_preload()         # no st.rerun() — fail silently, completes on next render
+
+if not st.session_state.get("_hist_loaded"):
+    from tools.analysis_history import ensure_history_loaded as _hist_preload
+    _hist_preload()       # same
+
 # ── Cached render ─────────────────────────────────────────────────────────────
 # If the user isn't launching a new run but a previous analysis exists (e.g. the
 # page reran because they clicked the PDF download button), repaint the dashboard
