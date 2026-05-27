@@ -368,16 +368,91 @@ def pct(v):
     return f"{float(v):.1f}%"
 
 
-def verdict_css(text: str) -> str:
-    t = text.upper()
-    if "STRONG BUY" in t or "ซื้อแรง" in t:
-        return "vb-sbuy", "STRONG BUY ⚡"
-    if "STRONG SELL" in t or "ขายแรง" in t:
+def _parse_final_rating(text: str) -> str | None:
+    """
+    Extract the CFA PM's structured FINAL RATING line.
+    Looks for patterns like:
+      "2. FINAL RATING: STRONG BUY"
+      "**FINAL RATING:** BUY"
+      "FINAL RATING: SELL"
+    Returns one of: STRONG BUY | BUY | HOLD | SELL | STRONG SELL  or None.
+    """
+    import re as _re
+    # Primary: match labelled "FINAL RATING" line
+    m = _re.search(
+        r'FINAL\s+RATING\s*[:\-–—]\s*(STRONG\s+BUY|STRONG\s+SELL|BUY|SELL|HOLD)',
+        text, _re.IGNORECASE,
+    )
+    if m:
+        return m.group(1).upper().strip()
+
+    # Secondary: other labelled verdict lines
+    m2 = _re.search(
+        r'(?:^|\n)\s*(?:\d+\.)?\s*\*{0,2}(?:RATING|VERDICT|RECOMMENDATION|FINAL\s+CALL)\s*\*{0,2}\s*[:\-–—]\s*(STRONG\s+BUY|STRONG\s+SELL|BUY|SELL|HOLD)',
+        text, _re.IGNORECASE | _re.MULTILINE,
+    )
+    if m2:
+        return m2.group(1).upper().strip()
+
+    return None
+
+
+def _verdict_from_tally(tally: dict) -> str:
+    """
+    Derive a verdict string from the raw vote tally dict when CFA PM text
+    parsing fails.  Returns one of: STRONG BUY | BUY | HOLD | SELL | STRONG SELL.
+    """
+    n_buy  = len(tally.get("BUY",  []))
+    n_hold = len(tally.get("HOLD", []))
+    n_sell = len(tally.get("SELL", []))
+    n_total = n_buy + n_hold + n_sell
+    if n_total == 0:
+        return "HOLD"
+
+    if n_buy > n_sell and n_buy > n_hold:
+        return "STRONG BUY" if n_buy / n_total >= 0.625 else "BUY"
+    if n_sell > n_buy and n_sell > n_hold:
+        return "STRONG SELL" if n_sell / n_total >= 0.625 else "SELL"
+    return "HOLD"
+
+
+def _rating_to_css(rating: str) -> tuple[str, str]:
+    """Map a clean rating string → (css_class, display_label)."""
+    r = rating.upper().strip()
+    if "STRONG BUY" in r:
+        return "vb-sbuy",  "STRONG BUY ⚡"
+    if "STRONG SELL" in r:
         return "vb-ssell", "STRONG SELL ⚡"
-    if "BUY" in t or "ซื้อ" in t:
-        return "vb-buy", "BUY 📈"
-    if "SELL" in t or "ขาย" in t:
-        return "vb-sell", "SELL 📉"
+    if r == "BUY":
+        return "vb-buy",   "BUY 📈"
+    if r == "SELL":
+        return "vb-sell",  "SELL 📉"
+    return "vb-hold", "HOLD / รอดู"
+
+
+def verdict_css(text: str, tally: dict | None = None) -> tuple[str, str]:
+    """
+    Return (css_class, display_label) for the IC verdict banner.
+    Priority:
+      1. Structured FINAL RATING line in CFA PM output  (most reliable)
+      2. Vote majority tally                            (if parsing fails)
+      3. Legacy keyword scan                            (last resort)
+    """
+    # 1. Parse structured line
+    rating = _parse_final_rating(text)
+    if rating:
+        return _rating_to_css(rating)
+
+    # 2. Derive from actual vote tally
+    if tally:
+        return _rating_to_css(_verdict_from_tally(tally))
+
+    # 3. Legacy keyword scan (fallback only — less reliable)
+    t = text.upper()
+    if "STRONG BUY"  in t: return "vb-sbuy",  "STRONG BUY ⚡"
+    if "STRONG SELL" in t: return "vb-ssell", "STRONG SELL ⚡"
+    if "BUY"  in t:        return "vb-buy",   "BUY 📈"
+    if "SELL" in t:        return "vb-sell",  "SELL 📉"
     return "vb-hold", "HOLD / รอดู"
 
 
@@ -788,19 +863,24 @@ def render_dashboard(A: dict):
     # ── IC Verdict tab ──────────────────────────────────────────────────────
     if "🏛️ IC Verdict" in tab_map:
         with tab_map["🏛️ IC Verdict"]:
+            # ── Vote Tally — read first so verdict banner can use it ─────────
+            tally = ic_results.get("_vote_tally", {})
+
             if "CFAPortfolioManager" in ic_results:
                 final_text = ic_results["CFAPortfolioManager"]["output"]
-                css, label = verdict_css(final_text)
+                # Pass tally so verdict_css uses structured parsing → tally fallback
+                css, label = verdict_css(final_text, tally=tally or None)
+
+                # Show parsed source so user can trust the label
+                _rating_src = "CFA PM" if _parse_final_rating(final_text) else "Vote Majority"
                 st.markdown(
                     f'<div class="verdict-banner {css}">{label}</div>',
                     unsafe_allow_html=True,
                 )
+                st.caption(f"📌 Verdict derived from: **{_rating_src}**")
                 st.markdown("### IC Final Verdict")
                 st.markdown(final_text)
                 st.markdown("---")
-
-            # ── Vote Tally ────────────────────────────────────────────────
-            tally = ic_results.get("_vote_tally", {})
             if tally:
                 n_buy  = len(tally.get("BUY",  []))
                 n_hold = len(tally.get("HOLD", []))
@@ -812,6 +892,23 @@ def render_dashboard(A: dict):
                 buy_voters  = ", ".join(tally.get("BUY",  [])) or "—"
                 hold_voters = ", ".join(tally.get("HOLD", [])) or "—"
                 sell_voters = ", ".join(tally.get("SELL", [])) or "—"
+
+                # Check if CFA PM verdict differs from vote majority
+                _majority = _verdict_from_tally(tally)
+                _pm_rating = (_parse_final_rating(ic_results.get("CFAPortfolioManager", {}).get("output", ""))
+                              if "CFAPortfolioManager" in ic_results else None)
+                _override_note = ""
+                if _pm_rating and _majority:
+                    _maj_side  = "BUY"  if "BUY"  in _majority  else "SELL" if "SELL"  in _majority  else "HOLD"
+                    _pm_side   = "BUY"  if "BUY"  in _pm_rating else "SELL" if "SELL"  in _pm_rating else "HOLD"
+                    if _maj_side != _pm_side:
+                        _override_note = (
+                            f'<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;'
+                            f'padding:8px 14px;margin-top:10px;font-size:0.8rem;color:#92400e">'
+                            f'⚠️ CFA PM overrode majority: Vote = <b>{_majority}</b> → PM = <b>{_pm_rating}</b>'
+                            f'</div>'
+                        )
+
                 st.markdown("### 🗳️ IC Vote Summary")
                 st.markdown(
                     f"""
@@ -847,6 +944,7 @@ def render_dashboard(A: dict):
     <span style="color:#a16207">HOLD:</span> {hold_voters}<br>
     <span style="color:#b91c1c">SELL:</span> {sell_voters}
   </div>
+  {_override_note}
 </div>""",
                     unsafe_allow_html=True,
                 )
