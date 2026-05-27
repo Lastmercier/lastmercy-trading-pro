@@ -10,4 +10,3 @@ feedparser>=6.0.11
 requests>=2.31.0
 python-dotenv>=1.0.0
 numpy>=1.24.0
-streamlit-javascript>=0.0.16

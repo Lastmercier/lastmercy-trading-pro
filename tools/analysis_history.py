@@ -1,14 +1,11 @@
 """
 Analysis History — stores a rich summary of every analysis run.
 
-Persistence strategy (same as trade_log.py):
-  • Session state  : in-memory, current Streamlit session
-  • localStorage   : browser-side, survives page refresh/close
-    - WRITE via st.components.v1.html(<script>)  — zero height
-    - READ  via streamlit_javascript.st_javascript()
-      (returns None on first render; caller must handle via ensure_loaded)
+• Session state   : in-memory during the current Streamlit session
+• Server cache    : st.cache_resource dict keyed by user UID (see persistence.py)
+• JSON export/import : long-term backup across server restarts
 
-Size budget: ~4–5 KB per entry, ~1,000 entries fit in a 5 MB localStorage slot.
+Cap: 200 entries per user (well within cache memory budget).
 """
 
 from __future__ import annotations
@@ -74,7 +71,7 @@ def add_history_record(record: HistoryRecord) -> None:
     if record.id in existing_ids:
         return
     history.insert(0, record)
-    # Cap at 200 entries to stay well within localStorage limits
+    # Cap at 200 entries
     st.session_state[_SS_KEY] = history[:200]
 
 
@@ -95,72 +92,79 @@ def history_to_json(history: list[HistoryRecord]) -> str:
 def history_from_json(json_str: str) -> list[HistoryRecord]:
     try:
         records = json.loads(json_str)
-        return [HistoryRecord(**r) for r in records if isinstance(r, dict)]
+        if not isinstance(records, list):
+            return []
+        result = []
+        for r in records:
+            if not isinstance(r, dict):
+                continue
+            # Drop unknown keys so old exports still load cleanly
+            known = {f.name for f in dataclasses.fields(HistoryRecord)}
+            clean = {k: v for k, v in r.items() if k in known}
+            try:
+                result.append(HistoryRecord(**clean))
+            except Exception:
+                continue
+        return result
     except Exception:
         return []
 
 
-# ── localStorage bridge ───────────────────────────────────────────────────────
-
-_LS_KEY = "lastmercy_history"
+# ── Server-side persistence ───────────────────────────────────────────────────
+#
+# Replaces the unreliable localStorage / streamlit-javascript approach.
+# All writes go to a st.cache_resource dict keyed by user UID.
+# See tools/persistence.py for architecture details.
+#
+_PERSIST_KEY = "analysis_history"
 
 
 def write_history_localstorage(history: list[HistoryRecord]) -> None:
     """
-    Write history to localStorage.
+    Persist history to the server-side cache for this user.
 
-    Same approach as trade_log.write_localstorage — uses st_javascript
-    instead of st.components.v1.html(height=0).  Zero-height iframes are
-    silently skipped by most browsers, so scripts inside them never run.
-    st_javascript renders a proper (but invisible) Streamlit component
-    that reliably executes JavaScript.
-
-    Hash-based key: new component (→ JS re-runs) only when data changes.
+    Name kept for backward compatibility with all call-sites in app.py.
+    No longer writes to browser localStorage — uses st.cache_resource instead.
     """
-    import hashlib
-    data  = history_to_json(history)
-    _key  = "hist_w_" + hashlib.md5(data.encode()).hexdigest()[:8]
     try:
-        from streamlit_javascript import st_javascript
-        st_javascript(
-            f"(()=>{{try{{localStorage.setItem({json.dumps(_LS_KEY)},{json.dumps(data)});}}catch(e){{console.warn('[Hist write]',e);}}return 1;}})()",
-            key=_key,
-        )
-    except ImportError:
-        st.components.v1.html(
-            f"<script>try{{localStorage.setItem({json.dumps(_LS_KEY)},{json.dumps(data)});}}catch(e){{console.warn(e);}}</script>",
-            height=30,
-        )
+        from tools.persistence import get_uid, save
+        save(get_uid(), _PERSIST_KEY, history_to_json(history))
+    except Exception:
+        pass   # never crash the UI over a persistence failure
 
 
 def read_history_localstorage() -> Optional[str]:
-    """Read history JSON string from localStorage (None on first render)."""
+    """
+    Read history JSON string from server-side cache.
+    Kept for backward compatibility; always returns immediately (no JS delay).
+    """
     try:
-        from streamlit_javascript import st_javascript
-        return st_javascript(
-            f'localStorage.getItem({json.dumps(_LS_KEY)}) || "[]"',
-            key="hist_ls_read",
-        )
-    except ImportError:
+        from tools.persistence import get_uid, load
+        return load(get_uid(), _PERSIST_KEY)
+    except Exception:
         return "[]"
 
 
 def ensure_history_loaded() -> bool:
     """
-    Load history from localStorage into session_state exactly once per session.
-    Returns True when done, False on first render (JS not yet executed).
+    Load history from server-side cache into session_state exactly once per session.
+
+    Always returns True (no first-render delay unlike st_javascript).
+    Callers that checked 'if not ensure_history_loaded(): st.rerun()' are safe —
+    that branch is simply never entered.
     """
     if st.session_state.get("_hist_loaded"):
         return True
 
-    raw = read_history_localstorage()
-    if raw is None:
-        return False  # first render — wait
+    try:
+        from tools.persistence import get_uid, load
+        raw = load(get_uid(), _PERSIST_KEY)
+    except Exception:
+        raw = "[]"
 
     loaded = history_from_json(raw)
     current = st.session_state.get(_SS_KEY) or []
     if loaded:
-        # Merge: keep current-session records AND historical records (by id)
         current_ids = {r.id for r in current}
         merged = current + [r for r in loaded if r.id not in current_ids]
         st.session_state[_SS_KEY] = merged[:200]

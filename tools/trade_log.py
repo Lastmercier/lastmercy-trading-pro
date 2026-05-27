@@ -1,11 +1,9 @@
 """
-Trade Log — persistent trade journal backed by st.session_state + browser localStorage.
+Trade Log — persistent trade journal backed by st.session_state + server cache.
 
-• Session state   : in-memory during a Streamlit session
-• localStorage    : persists across browser sessions (requires streamlit-javascript)
-• WRITE path      : st.components.v1.html(<script>) — no extra package, zero height
-• READ  path      : streamlit_javascript.st_javascript() — returns None on first
-                    render; we set a flag so we only wait once.
+• Session state   : in-memory during the current Streamlit session
+• Server cache    : st.cache_resource dict keyed by user UID (see persistence.py)
+• JSON export/import : long-term backup across server restarts
 """
 
 from __future__ import annotations
@@ -103,80 +101,67 @@ def trades_to_json(trades: list[TradeRecord]) -> str:
 def trades_from_json(json_str: str) -> list[TradeRecord]:
     try:
         records = json.loads(json_str)
-        return [TradeRecord(**r) for r in records if isinstance(r, dict)]
+        if not isinstance(records, list):
+            return []
+        result = []
+        for r in records:
+            if not isinstance(r, dict):
+                continue
+            # Drop unknown keys so old exports still load cleanly
+            known = {f.name for f in dataclasses.fields(TradeRecord)}
+            clean = {k: v for k, v in r.items() if k in known}
+            try:
+                result.append(TradeRecord(**clean))
+            except Exception:
+                continue
+        return result
     except Exception:
         return []
 
 
-# ── localStorage bridge ───────────────────────────────────────────────────────
-
-_LS_KEY = "lastmercy_trades"
+# ── Server-side persistence ───────────────────────────────────────────────────
+#
+# Replaces the unreliable localStorage / streamlit-javascript approach.
+# All writes go to a st.cache_resource dict keyed by user UID.
+# See tools/persistence.py for architecture details.
+#
+_PERSIST_KEY = "trade_log"
 
 
 def write_localstorage(trades: list[TradeRecord]) -> None:
     """
-    Write trades to localStorage.
+    Persist trades to the server-side cache for this user.
 
-    Uses st_javascript (the same mechanism as reads) because
-    st.components.v1.html(height=0) silently fails on many browsers —
-    zero-height iframes are optimised away before their scripts execute.
-
-    A short hash of the data is used as the component key so Streamlit
-    creates a fresh component (and re-runs the JS) whenever the data
-    actually changes, without spinning up a new component on every render
-    when nothing has changed.
-    """
-    import hashlib
-    data  = trades_to_json(trades)
-    _key  = "tl_w_" + hashlib.md5(data.encode()).hexdigest()[:8]
-    try:
-        from streamlit_javascript import st_javascript
-        st_javascript(
-            f"(()=>{{try{{localStorage.setItem({json.dumps(_LS_KEY)},{json.dumps(data)});}}catch(e){{console.warn('[TL write]',e);}}return 1;}})()",
-            key=_key,
-        )
-    except ImportError:
-        # Fallback (less reliable but works when package is missing)
-        st.components.v1.html(
-            f"<script>try{{localStorage.setItem({json.dumps(_LS_KEY)},{json.dumps(data)});}}catch(e){{console.warn(e);}}</script>",
-            height=30,
-        )
-
-
-def read_localstorage() -> Optional[str]:
-    """
-    Read the raw JSON string from localStorage via streamlit-javascript.
-    Returns None on the very first render (JS not yet executed).
-    Returns "[]" or a JSON array string on subsequent renders.
-    Falls back to "[]" if the package is not installed.
+    Name kept for backward compatibility with all call-sites in app.py.
+    No longer writes to browser localStorage — uses st.cache_resource instead.
     """
     try:
-        from streamlit_javascript import st_javascript
-        return st_javascript(
-            f'localStorage.getItem({json.dumps(_LS_KEY)}) || "[]"',
-            key="tl_ls_read",
-        )
-    except ImportError:
-        return "[]"
+        from tools.persistence import get_uid, save
+        save(get_uid(), _PERSIST_KEY, trades_to_json(trades))
+    except Exception:
+        pass   # never crash the UI over a persistence failure
 
 
 def ensure_loaded() -> bool:
     """
-    Load trades from localStorage into session_state exactly once per session.
-    Returns True when loading is complete (or if already done).
-    Returns False on the very first render — caller should st.rerun().
+    Load trades from server-side cache into session_state exactly once per session.
+
+    Always returns True (no first-render delay unlike st_javascript).
+    Callers that checked 'if not ensure_loaded(): st.rerun()' are safe —
+    that branch is simply never entered.
     """
     if st.session_state.get("_tl_loaded"):
-        return True  # already loaded this session
+        return True
 
-    raw = read_localstorage()
-    if raw is None:
-        return False  # first render — JS hasn't responded yet
+    try:
+        from tools.persistence import get_uid, load
+        raw = load(get_uid(), _PERSIST_KEY)
+    except Exception:
+        raw = "[]"
 
     loaded = trades_from_json(raw)
     current = st.session_state.get(_SS_KEY) or []
     if loaded:
-        # Merge: keep current-session trades AND historical trades (by id)
         current_ids = {t.id for t in current}
         merged = current + [t for t in loaded if t.id not in current_ids]
         st.session_state[_SS_KEY] = merged

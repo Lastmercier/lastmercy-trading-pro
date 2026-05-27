@@ -319,6 +319,13 @@ hr { border-color: #e2e8f0 !important; }
 )
 
 
+# ── Persistence: establish user UID early ─────────────────────────────────────
+# Must run before any page routing so the UID is in session_state before the
+# first call to write_localstorage() / write_history_localstorage().
+from tools.persistence import get_uid as _init_uid
+_init_uid()
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def api_key_ok() -> bool:
     return bool(os.environ.get("ANTHROPIC_API_KEY", "").strip())
@@ -667,21 +674,14 @@ def render_etf_holdings(ticker: str):
 
 def render_history():
     """Render the Analysis History page (📜 tab)."""
-    import time as _time
     from tools.analysis_history import (
         HistoryRecord, get_history, delete_history_record, clear_history,
         write_history_localstorage, ensure_history_loaded,
         history_to_json, history_from_json,
     )
 
-    # ── Load from localStorage on first visit ──────────────────────────────
-    if not ensure_history_loaded():
-        st.markdown(
-            '<div style="color:#94a3b8;font-size:0.8rem;padding:8px">⌛ Loading history…</div>',
-            unsafe_allow_html=True,
-        )
-        _time.sleep(0.15)
-        st.rerun()
+    # Load from server-side cache on first visit (always immediate — no JS delay)
+    ensure_history_loaded()
 
     history = get_history()
 
@@ -899,7 +899,6 @@ def render_history():
 
 def render_trade_log():
     """Render the Trade Log page (📓 tab)."""
-    import time as _time
     import uuid as _uuid
     from tools.trade_log import (
         TradeRecord, get_trades, delete_trade, clear_trades,
@@ -907,15 +906,8 @@ def render_trade_log():
         fetch_prices_parallel, trades_to_json, trades_from_json,
     )
 
-    # ── Load from localStorage on first visit ──────────────────────────────
-    if not ensure_loaded():
-        # First render: st_javascript hasn't resolved yet — rerun once.
-        st.markdown(
-            '<div style="color:#94a3b8;font-size:0.8rem;padding:8px">⌛ Loading trade log…</div>',
-            unsafe_allow_html=True,
-        )
-        _time.sleep(0.15)
-        st.rerun()
+    # Load from server-side cache on first visit (always immediate — no JS delay)
+    ensure_loaded()
 
     trades = get_trades()
 
@@ -1534,6 +1526,17 @@ with st.sidebar:
         label_visibility="collapsed",
         key="page_nav",
     )
+    # ── Data persistence hint ────────────────────────────────────────────────
+    _uid_hint = st.session_state.get("_uid", "")
+    if _uid_hint:
+        st.markdown(
+            f'<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;'
+            f'padding:7px 12px;font-size:0.72rem;color:#0369a1;margin-bottom:2px">'
+            f'💾 <b>Data saves to this session.</b> Bookmark or copy the current URL '
+            f'(it contains your ID) to restore your Trade Log &amp; History later.'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
     st.markdown('<hr style="margin:10px 0 14px;border-color:#e2e8f0">', unsafe_allow_html=True)
 
     # ── Provider selection ────────────────────────────────────────────────────
@@ -1952,22 +1955,16 @@ if _page == "📜 History":
     render_history()
     st.stop()
 
-# ── Pre-load localStorage → session_state (Analysis page) ────────────────────
-# Trade Log and History pages call ensure_loaded() internally (with st.rerun()
-# fallback).  On the Analysis page we pre-load silently here so that by the
-# time the user clicks "Run Analysis" or "Log Trade" (= second+ render),
-# session_state already contains ALL previous-session data.  Writes then
-# include the full merged set, not just the current-session subset.
-#
-# First render: st_javascript returns None → flags stay False → no crash.
-# Second render (any interaction): st_javascript resolves → data merged in.
+# ── Pre-load server-side cache → session_state (Analysis page) ───────────────
+# Loads Trade Log and History from st.cache_resource exactly once per session.
+# Always completes immediately (no JS first-render delay).
 if not st.session_state.get("_tl_loaded"):
     from tools.trade_log import ensure_loaded as _tl_preload
-    _tl_preload()         # no st.rerun() — fail silently, completes on next render
+    _tl_preload()
 
 if not st.session_state.get("_hist_loaded"):
     from tools.analysis_history import ensure_history_loaded as _hist_preload
-    _hist_preload()       # same
+    _hist_preload()
 
 # ── Cached render ─────────────────────────────────────────────────────────────
 # If the user isn't launching a new run but a previous analysis exists (e.g. the
