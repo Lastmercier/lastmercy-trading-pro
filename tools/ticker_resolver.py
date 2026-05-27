@@ -462,27 +462,423 @@ _THAI_FUND_ALIASES: dict[str, str] = {
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# US Stocks — NASDAQ + NYSE (ticker → company name)
+# Enables fuzzy search by company name ("apple" → AAPL) and direct ticker
+# lookup with proper company display ("KC" → "KC — Kingsoft Cloud Holdings")
+# ─────────────────────────────────────────────────────────────────────────────
+US_STOCKS: dict[str, str] = {
+    # ── Magnificent 7 + Mega-cap Tech ────────────────────────────────────────
+    "AAPL":  "Apple Inc",
+    "MSFT":  "Microsoft Corporation",
+    "GOOGL": "Alphabet Inc Class A",
+    "GOOG":  "Alphabet Inc Class C",
+    "AMZN":  "Amazon.com Inc",
+    "META":  "Meta Platforms Inc",
+    "NVDA":  "NVIDIA Corporation",
+    "TSLA":  "Tesla Inc",
+    "NFLX":  "Netflix Inc",
+    "AVGO":  "Broadcom Inc",
+    # ── Semiconductors ───────────────────────────────────────────────────────
+    "AMD":   "Advanced Micro Devices",
+    "INTC":  "Intel Corporation",
+    "QCOM":  "Qualcomm Inc",
+    "TXN":   "Texas Instruments",
+    "AMAT":  "Applied Materials",
+    "LRCX":  "Lam Research",
+    "KLAC":  "KLA Corporation",
+    "MRVL":  "Marvell Technology",
+    "MU":    "Micron Technology",
+    "ASML":  "ASML Holding (US ADR)",
+    "TSM":   "Taiwan Semiconductor (ADR)",
+    "STX":   "Seagate Technology",
+    "WDC":   "Western Digital",
+    "MCHP":  "Microchip Technology",
+    "ON":    "ON Semiconductor",
+    "SWKS":  "Skyworks Solutions",
+    "QRVO":  "Qorvo Inc",
+    "MPWR":  "Monolithic Power Systems",
+    "ENTG":  "Entegris Inc",
+    "WOLF":  "Wolfspeed Inc",
+    "SMCI":  "Super Micro Computer",
+    "ARM":   "Arm Holdings",
+    "NXPI":  "NXP Semiconductors",
+    "ADI":   "Analog Devices",
+    "MXIM":  "Maxim Integrated",
+    # ── Cloud / SaaS ─────────────────────────────────────────────────────────
+    "CRM":   "Salesforce Inc",
+    "NOW":   "ServiceNow Inc",
+    "ADBE":  "Adobe Inc",
+    "INTU":  "Intuit Inc",
+    "WDAY":  "Workday Inc",
+    "VEEV":  "Veeva Systems",
+    "DDOG":  "Datadog Inc",
+    "NET":   "Cloudflare Inc",
+    "MDB":   "MongoDB Inc",
+    "SNOW":  "Snowflake Inc",
+    "PLTR":  "Palantir Technologies",
+    "PANW":  "Palo Alto Networks",
+    "CRWD":  "CrowdStrike Holdings",
+    "ZS":    "Zscaler Inc",
+    "OKTA":  "Okta Inc",
+    "TWLO":  "Twilio Inc",
+    "ESTC":  "Elastic NV",
+    "TEAM":  "Atlassian Corp",
+    "HUBS":  "HubSpot Inc",
+    "SHOP":  "Shopify Inc",
+    "GTLB":  "GitLab Inc",
+    "DBTX":  "Dartmouth Bio",
+    "S":     "SentinelOne",
+    "SMAR":  "Smartsheet Inc",
+    "WIX":   "Wix.com",
+    "GRAB":  "Grab Holdings (SEA)",
+    # NOTE: "SE" and "SEA" are Thai SET tickers — Sea Limited NYSE uses "SE"
+    # Users should search "sea limited" or use full ticker to disambiguate
+    "TCOM":  "Trip.com Group",
+    # ── Internet / E-Commerce / Social ───────────────────────────────────────
+    "UBER":  "Uber Technologies",
+    "LYFT":  "Lyft Inc",
+    "DASH":  "DoorDash Inc",
+    "ABNB":  "Airbnb Inc",
+    "EXPE":  "Expedia Group",
+    "BKNG":  "Booking Holdings",
+    "EBAY":  "eBay Inc",
+    "ETSY":  "Etsy Inc",
+    "W":     "Wayfair Inc",
+    "WISH":  "ContextLogic",
+    "SNAP":  "Snap Inc",
+    "PINS":  "Pinterest Inc",
+    "RDDT":  "Reddit Inc",
+    "SPOT":  "Spotify Technology",
+    "RBLX":  "Roblox Corporation",
+    "TTWO":  "Take-Two Interactive",
+    "EA":    "Electronic Arts",
+    "ATVI":  "Activision Blizzard",
+    "NTES":  "NetEase Inc (ADR)",
+    # ── Fintech / Payments ────────────────────────────────────────────────────
+    "V":     "Visa Inc",
+    "MA":    "Mastercard Inc",
+    "PYPL":  "PayPal Holdings",
+    "SQ":    "Block Inc (Square)",
+    "AFRM":  "Affirm Holdings",
+    "UPST":  "Upstart Holdings",
+    "SOFI":  "SoFi Technologies",
+    "COIN":  "Coinbase Global",
+    "HOOD":  "Robinhood Markets",
+    "GPN":   "Global Payments",
+    "FIS":   "Fidelity National Info",
+    "FISV":  "Fiserv Inc",
+    "ICE":   "Intercontinental Exchange",
+    "CME":   "CME Group",
+    "NDAQ":  "Nasdaq Inc",
+    "MSCI":  "MSCI Inc",
+    "SPGI":  "S&P Global",
+    "MCO":   "Moody's Corporation",
+    # ── Finance / Banks / Asset Management ───────────────────────────────────
+    "JPM":   "JPMorgan Chase",
+    "BAC":   "Bank of America",
+    "WFC":   "Wells Fargo",
+    "GS":    "Goldman Sachs",
+    "MS":    "Morgan Stanley",
+    "C":     "Citigroup",
+    "USB":   "U.S. Bancorp",
+    "PNC":   "PNC Financial",
+    "COF":   "Capital One Financial",
+    "DFS":   "Discover Financial",
+    "AXP":   "American Express",
+    "SCHW":  "Charles Schwab",
+    "BLK":   "BlackRock Inc",
+    "BX":    "Blackstone Inc",
+    "KKR":   "KKR & Co",
+    "APO":   "Apollo Global Mgmt",
+    "ARES":  "Ares Management",
+    "STT":   "State Street",
+    "BK":    "Bank of New York Mellon",
+    # ── EV / Auto ─────────────────────────────────────────────────────────────
+    "TSLA":  "Tesla Inc",
+    "RIVN":  "Rivian Automotive",
+    "LCID":  "Lucid Group",
+    "FSR":   "Fisker Inc",
+    "GM":    "General Motors",
+    "F":     "Ford Motor Company",
+    "STLA":  "Stellantis NV",
+    "TM":    "Toyota Motor (ADR)",
+    "HMC":   "Honda Motor (ADR)",
+    "NIO":   "NIO Inc (China EV ADR)",
+    "LI":    "Li Auto (China EV ADR)",
+    "XPEV":  "XPeng Inc (China EV ADR)",
+    "ZK":    "ZEEKR Intelligent EV",
+    "NKLA":  "Nikola Corporation",
+    # ── Healthcare / Biotech ─────────────────────────────────────────────────
+    "AMGN":  "Amgen Inc",
+    "GILD":  "Gilead Sciences",
+    "BIIB":  "Biogen Inc",
+    "REGN":  "Regeneron Pharmaceuticals",
+    "VRTX":  "Vertex Pharmaceuticals",
+    "MRNA":  "Moderna Inc",
+    "BNTX":  "BioNTech SE (ADR)",
+    "DXCM":  "Dexcom Inc",
+    "IDXX":  "IDEXX Laboratories",
+    "ILMN":  "Illumina Inc",
+    "ISRG":  "Intuitive Surgical",
+    "TMO":   "Thermo Fisher Scientific",
+    "DHR":   "Danaher Corporation",
+    "ABT":   "Abbott Laboratories",
+    "JNJ":   "Johnson & Johnson",
+    "PFE":   "Pfizer Inc",
+    "MRK":   "Merck & Co",
+    "BMY":   "Bristol-Myers Squibb",
+    "LLY":   "Eli Lilly",
+    "ABBV":  "AbbVie Inc",
+    "MDT":   "Medtronic",
+    "BSX":   "Boston Scientific",
+    "SYK":   "Stryker Corporation",
+    "EW":    "Edwards Lifesciences",
+    "ZBH":   "Zimmer Biomet",
+    "BDX":   "Becton Dickinson",
+    "HCA":   "HCA Healthcare",
+    "CVS":   "CVS Health",
+    "UNH":   "UnitedHealth Group",
+    "CI":    "Cigna Group",
+    "HUM":   "Humana Inc",
+    "MCK":   "McKesson Corporation",
+    "CAH":   "Cardinal Health",
+    "WBA":   "Walgreens Boots Alliance",
+    # ── Consumer / Retail ─────────────────────────────────────────────────────
+    "COST":  "Costco Wholesale",
+    "WMT":   "Walmart Inc",
+    "TGT":   "Target Corporation",
+    "HD":    "Home Depot",
+    "LOW":   "Lowe's Companies",
+    "MCD":   "McDonald's Corporation",
+    "SBUX":  "Starbucks Corporation",
+    "CMG":   "Chipotle Mexican Grill",
+    "YUM":   "Yum Brands",
+    "DRI":   "Darden Restaurants",
+    "NKE":   "Nike Inc",
+    "LULU":  "Lululemon Athletica",
+    "DECK":  "Deckers Outdoor",
+    "TPR":   "Tapestry Inc",
+    "RL":    "Ralph Lauren",
+    "PVH":   "PVH Corp",
+    "VFC":   "VF Corporation",
+    "PG":    "Procter & Gamble",
+    "KO":    "Coca-Cola Company",
+    "PEP":   "PepsiCo Inc",
+    "MDLZ":  "Mondelez International",
+    "GIS":   "General Mills",
+    "K":     "Kellanova (Kellogg)",
+    "HSY":   "Hershey Company",
+    "MKC":   "McCormick & Company",
+    "CL":    "Colgate-Palmolive",
+    "CHD":   "Church & Dwight",
+    "CLX":   "Clorox Company",
+    # ── Industrial / Aerospace ────────────────────────────────────────────────
+    "BA":    "Boeing Company",
+    "RTX":   "RTX Corporation (Raytheon)",
+    "LMT":   "Lockheed Martin",
+    "NOC":   "Northrop Grumman",
+    "GD":    "General Dynamics",
+    "HII":   "Huntington Ingalls",
+    "CAT":   "Caterpillar Inc",
+    "DE":    "Deere & Company",
+    "EMR":   "Emerson Electric",
+    "ETN":   "Eaton Corporation",
+    "HON":   "Honeywell International",
+    "GE":    "GE Aerospace",
+    "MMM":   "3M Company",
+    "ITW":   "Illinois Tool Works",
+    "PH":    "Parker-Hannifin",
+    "ROK":   "Rockwell Automation",
+    "UPS":   "United Parcel Service",
+    "FDX":   "FedEx Corporation",
+    # ── Energy ────────────────────────────────────────────────────────────────
+    "XOM":   "Exxon Mobil",
+    "CVX":   "Chevron Corporation",
+    "COP":   "ConocoPhillips",
+    "EOG":   "EOG Resources",
+    "SLB":   "SLB (Schlumberger)",
+    "HAL":   "Halliburton Company",
+    "BKR":   "Baker Hughes",
+    "OXY":   "Occidental Petroleum",
+    "DVN":   "Devon Energy",
+    "FANG":  "Diamondback Energy",
+    "MPC":   "Marathon Petroleum",
+    "PSX":   "Phillips 66",
+    "VLO":   "Valero Energy",
+    # ── Media / Telecom ───────────────────────────────────────────────────────
+    "DIS":   "Walt Disney Company",
+    "CMCSA": "Comcast Corporation",
+    "PARA":  "Paramount Global",
+    "WBD":   "Warner Bros Discovery",
+    "FOXA":  "Fox Corporation Class A",
+    "T":     "AT&T Inc",
+    "VZ":    "Verizon Communications",
+    "TMUS":  "T-Mobile US",
+    "NYT":   "New York Times",
+    "IAC":   "IAC Inc",
+    # ── Chinese ADR — NASDAQ / NYSE ───────────────────────────────────────────
+    "BABA":  "Alibaba Group (ADR)",
+    "JD":    "JD.com Inc (ADR)",
+    "PDD":   "PDD Holdings / Temu (ADR)",
+    "BIDU":  "Baidu Inc (ADR)",
+    "TCEHY": "Tencent Holdings (OTC)",
+    "IQ":    "iQIYI Inc (ADR)",
+    "VIPS":  "Vipshop Holdings (ADR)",
+    "TME":   "Tencent Music (ADR)",
+    "HTHT":  "H World Group (ADR)",
+    "EDU":   "New Oriental Education (ADR)",
+    "TAL":   "TAL Education Group (ADR)",
+    "YUMC":  "Yum China Holdings",
+    "ZTO":   "ZTO Express (ADR)",
+    "DIDI":  "DiDi Global (OTC)",
+    "MOMO":  "Hello Group (ADR)",
+    "KC":    "Kingsoft Cloud Holdings (ADR)",   # ← ตัวที่ user หา
+    "CANG":  "Canaan Inc (ADR)",
+    "BEST":  "BEST Inc (ADR)",
+    "QFIN":  "360 DigiTech (ADR)",
+    "LPSN":  "LivePerson Inc",
+    "TIGR":  "UP Fintech (Tiger Brokers ADR)",
+    "FUTU":  "Futu Holdings (ADR)",
+    "LAIX":  "LAIX Inc (ADR)",
+    "RLX":   "RLX Technology (ADR)",
+    "XPENG": "XPeng Inc",
+    "WB":    "Weibo Corporation (ADR)",
+    "CIFS":  "China Index Holdings",
+    "NOAH":  "Noah Holdings (ADR)",
+    "LKNCY": "Luckin Coffee (OTC)",
+    "GDS":   "GDS Holdings (ADR)",
+    "FINV":  "FinVolution Group (ADR)",
+    # ── Southeast Asia / Emerging ─────────────────────────────────────────────
+    "GRAB":  "Grab Holdings",
+    "GOTO":  "GoTo Group",
+    "BUKALAPAK": "Bukalapak (Indonesia)",
+    "GLBE":  "Global-E Online",
+    # ── AI / Data / Cloud Infrastructure ─────────────────────────────────────
+    "AI":    "C3.ai Inc",
+    "BBAI":  "BigBear.ai Holdings",
+    "SOUN":  "SoundHound AI",
+    "IONQ":  "IonQ Inc (Quantum Computing)",
+    "RGTI":  "Rigetti Computing",
+    "QUBT":  "Quantum Computing Inc",
+    "ARQQ":  "Arqit Quantum Inc",
+    "NVEI":  "Nuvei Corporation",
+    "PATH":  "UiPath Inc",
+    "ASAN":  "Asana Inc",
+    "BASE":  "Couchbase Inc",
+    "CFLT":  "Confluent Inc",
+    "GTLB":  "GitLab Inc",
+    "SUMO":  "Sumo Logic",
+    # ── ETFs — popular US ETFs ────────────────────────────────────────────────
+    "SPY":   "SPDR S&P 500 ETF",
+    "QQQ":   "Invesco NASDAQ 100 ETF",
+    "IWM":   "iShares Russell 2000 ETF",
+    "DIA":   "SPDR Dow Jones ETF",
+    "VTI":   "Vanguard Total Market ETF",
+    "VOO":   "Vanguard S&P 500 ETF",
+    "GLD":   "SPDR Gold Shares ETF",
+    "SLV":   "iShares Silver Trust ETF",
+    "TLT":   "iShares 20+Y Treasury ETF",
+    "HYG":   "iShares High Yield Bond ETF",
+    "LQD":   "iShares Corp Bond ETF",
+    "XLK":   "Technology Select SPDR",
+    "XLF":   "Financial Select SPDR",
+    "XLE":   "Energy Select SPDR",
+    "XLV":   "Health Care Select SPDR",
+    "XLI":   "Industrial Select SPDR",
+    "XLY":   "Consumer Disc. Select SPDR",
+    "XLP":   "Consumer Staples SPDR",
+    "XLB":   "Materials Select SPDR",
+    "XLRE":  "Real Estate Select SPDR",
+    "XLU":   "Utilities Select SPDR",
+    "ARKK":  "ARK Innovation ETF",
+    "ARKQ":  "ARK Autonomous Tech ETF",
+    "ARKW":  "ARK Next Gen Internet ETF",
+    "ARKG":  "ARK Genomic Revolution ETF",
+    "SOXX":  "iShares Semiconductor ETF",
+    "SMH":   "VanEck Semiconductor ETF",
+    "KWEB":  "KraneShares China Internet ETF",
+    "EEM":   "iShares MSCI Emerging Markets",
+    "EFA":   "iShares MSCI EAFE ETF",
+    "VWO":   "Vanguard Emerging Markets ETF",
+    # ── Real Estate / REIT ────────────────────────────────────────────────────
+    "PLD":   "Prologis Inc",
+    "AMT":   "American Tower REIT",
+    "EQIX":  "Equinix Inc",
+    "CCI":   "Crown Castle Inc",
+    "SPG":   "Simon Property Group",
+    "O":     "Realty Income",
+    "WELL":  "Welltower Inc",
+    "AVB":   "AvalonBay Communities",
+    "EQR":   "Equity Residential",
+    "PSA":   "Public Storage",
+    "DLR":   "Digital Realty Trust",
+    "IRM":   "Iron Mountain",
+    # ── Communications / Software ─────────────────────────────────────────────
+    "ORCL":  "Oracle Corporation",
+    "IBM":   "IBM Corporation",
+    "CSCO":  "Cisco Systems",
+    "ACN":   "Accenture PLC",
+    "CTSH":  "Cognizant Technology",
+    "WIT":   "Wipro Ltd (ADR)",
+    "INFY":  "Infosys Ltd (ADR)",
+    "HCL":   "HCL Technologies (ADR)",
+    # ── Misc / Popular small/mid cap ─────────────────────────────────────────
+    "ROKU":  "Roku Inc",
+    "ZOOM":  "Zoom Video Communications",
+    "ZM":    "Zoom Video Communications",
+    "DOCU":  "DocuSign Inc",
+    "BOX":   "Box Inc",
+    "DBX":   "Dropbox Inc",
+    "BILL":  "Bill.com Holdings",
+    "NCNO":  "nCino Inc",
+    "PRGS":  "Progress Software",
+    "TTEC":  "TTEC Holdings",
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Internal: master lookup for fuzzy search
 # ─────────────────────────────────────────────────────────────────────────────
 def _build_search_corpus() -> dict[str, dict]:
     """Build a flat {key: result_dict} for fuzzy matching."""
     corpus: dict[str, dict] = {}
 
+    # Thai SET / MAI
     for sym in SET_TICKERS:
         corpus[sym] = _make(f"{sym}.BK", "stock", "SET", f"{sym} (SET)")
     for sym, name in SET_NAMES.items():
         corpus[name.upper()] = _make(f"{sym}.BK", "stock", "SET", f"{sym} (SET) — {name}")
 
+    # US stocks — two entries each: by ticker AND by company name
+    for sym, company in US_STOCKS.items():
+        _label = f"{sym} — {company}"
+        _ac    = "etf" if any(w in company for w in ("ETF", "Fund", "Trust")) else "stock"
+        corpus[sym] = _make(sym, _ac, "US", _label)
+        # Index by company name words too (e.g. "APPLE INC" → AAPL)
+        corpus[company.upper()] = _make(sym, _ac, "US", _label)
+        # Short name without "Inc/Corp/Ltd" for easier fuzzy matching
+        _short = (company.upper()
+                  .replace(" INC", "").replace(" CORP", "").replace(" CORPORATION", "")
+                  .replace(" HOLDINGS", "").replace(" GROUP", "").replace(" LIMITED", "")
+                  .replace(" LTD", "").replace(" CO", "").replace(" (ADR)", "")
+                  .replace(" (OTC)", "").strip())
+        if _short and _short != sym:
+            corpus[_short] = _make(sym, _ac, "US", _label)
+
+    # Crypto
     for sym, yf in CRYPTO_MAP.items():
         corpus[sym] = _make(yf, "crypto", "crypto", f"{sym} (Crypto)")
 
+    # Forex
     for pair in FOREX_PAIRS:
         corpus[pair] = _make(FOREX_PAIRS[pair], "forex", "forex", FOREX_LABELS.get(pair, pair))
 
+    # Commodities / indices
     for name, yf in COMMODITY_MAP.items():
         ac = "crypto" if "-USD" in yf else "commodity" if "=F" in yf else "index"
         corpus[name] = _make(yf, ac, ac, name)
 
+    # Thai mutual funds
     for code, info in THAI_FUNDS.items():
         corpus[code] = _make(code, "fund", "TH-Fund", info["name"])
     for alias, code in _THAI_FUND_ALIASES.items():
@@ -593,8 +989,14 @@ def resolve(raw: str) -> dict:
     if t in THAI_FUNDS:
         return _make(t, "fund", "TH-Fund", THAI_FUNDS[t]["name"])
 
-    # ── Fallback: treat as US stock ───────────────────────────────────────────
-    return _make(t, "stock", "US", t)
+    # ── Known US stock (NASDAQ / NYSE) ────────────────────────────────────────
+    if t in US_STOCKS:
+        company = US_STOCKS[t]
+        _ac = "etf" if any(w in company for w in ("ETF", "Fund", "Trust")) else "stock"
+        return _make(t, _ac, "US", f"{t} — {company}")
+
+    # ── Fallback: treat as US stock (unknown ticker) ──────────────────────────
+    return _make(t, "stock", "US", t, uncertain=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
