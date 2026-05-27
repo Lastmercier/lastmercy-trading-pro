@@ -665,6 +665,238 @@ def render_etf_holdings(ticker: str):
     st.dataframe(df, use_container_width=True, hide_index=True)
 
 
+def render_history():
+    """Render the Analysis History page (📜 tab)."""
+    import time as _time
+    from tools.analysis_history import (
+        HistoryRecord, get_history, delete_history_record, clear_history,
+        write_history_localstorage, ensure_history_loaded,
+        history_to_json, history_from_json,
+    )
+
+    # ── Load from localStorage on first visit ──────────────────────────────
+    if not ensure_history_loaded():
+        st.markdown(
+            '<div style="color:#94a3b8;font-size:0.8rem;padding:8px">⌛ Loading history…</div>',
+            unsafe_allow_html=True,
+        )
+        _time.sleep(0.15)
+        st.rerun()
+
+    history = get_history()
+
+    # ── Header ─────────────────────────────────────────────────────────────
+    st.markdown("## 📜 Analysis History")
+
+    _n_long  = sum(1 for r in history if "BUY"  in r.ic_verdict)
+    _n_short = sum(1 for r in history if "SELL" in r.ic_verdict)
+
+    st.markdown(
+        f'<div style="display:flex;gap:10px;align-items:center;margin-bottom:14px">'
+        f'<span style="background:#f1f5f9;color:#475569;border-radius:20px;'
+        f'padding:3px 12px;font-size:0.8rem;font-weight:700">📋 {len(history)} analyses</span>'
+        f'<span style="background:#dcfce7;color:#15803d;border-radius:20px;'
+        f'padding:3px 12px;font-size:0.8rem;font-weight:700">🟢 BUY: {_n_long}</span>'
+        f'<span style="background:#fee2e2;color:#b91c1c;border-radius:20px;'
+        f'padding:3px 12px;font-size:0.8rem;font-weight:700">🔴 SELL: {_n_short}</span>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Controls ───────────────────────────────────────────────────────────
+    ctrl1, ctrl2, ctrl3, ctrl4 = st.columns([2, 1.5, 1.2, 1.0])
+    with ctrl1:
+        _filter = st.text_input("🔍 Filter by ticker / company",
+                                placeholder="e.g. NVDA, BTC, PTT",
+                                label_visibility="collapsed")
+    with ctrl2:
+        if history:
+            st.download_button(
+                "⬇️ Export History",
+                data=history_to_json(history),
+                file_name="analysis_history.json",
+                mime="application/json",
+                use_container_width=True,
+            )
+        else:
+            st.button("⬇️ Export History", disabled=True, use_container_width=True)
+    with ctrl3:
+        _do_import_exp = st.checkbox("📂 Import", value=False)
+    with ctrl4:
+        _do_clear = st.button("🗑️ Clear All", disabled=len(history) == 0,
+                              use_container_width=True)
+
+    # ── Import ─────────────────────────────────────────────────────────────
+    if _do_import_exp:
+        _up = st.file_uploader("Upload analysis_history.json", type="json",
+                               label_visibility="collapsed")
+        if _up:
+            try:
+                imported = history_from_json(_up.read().decode())
+                existing_ids = {r.id for r in get_history()}
+                new_ones = [r for r in imported if r.id not in existing_ids]
+                for r in reversed(new_ones):   # insert oldest first → newest at top
+                    get_history().insert(0, r)
+                st.session_state["analysis_history"] = get_history()[:200]
+                write_history_localstorage(get_history())
+                st.success(f"✅ Imported {len(new_ones)} new records")
+                st.rerun()
+            except Exception as _e:
+                st.error(f"❌ {_e}")
+
+    if _do_clear:
+        clear_history()
+        write_history_localstorage([])
+        st.rerun()
+
+    st.markdown("---")
+
+    if not history:
+        st.info(
+            "📭 No analysis history yet.\n\n"
+            "Run an analysis — it will be saved here automatically.",
+            icon="💡",
+        )
+        return
+
+    # ── Filter ─────────────────────────────────────────────────────────────
+    _q = (_filter or "").strip().upper()
+    shown = [r for r in history if not _q or _q in r.ticker.upper() or _q in r.company.upper()]
+    if _q and not shown:
+        st.warning(f"No records found for **{_filter}**")
+        return
+
+    st.caption(f"Showing {len(shown)} of {len(history)} records")
+
+    # ── Verdict CSS helper ─────────────────────────────────────────────────
+    def _verdict_badge(verdict: str) -> str:
+        v = verdict.upper()
+        if "STRONG BUY"  in v: bg, fg = "#166534", "#dcfce7"
+        elif "BUY"       in v: bg, fg = "#16a34a", "#f0fdf4"
+        elif "STRONG SELL" in v: bg, fg = "#991b1b", "#fee2e2"
+        elif "SELL"      in v: bg, fg = "#dc2626", "#fff1f2"
+        else:                    bg, fg = "#92400e", "#fef9c3"  # HOLD
+        label = verdict if verdict else "—"
+        return (
+            f'<span style="background:{bg};color:{fg};border-radius:5px;'
+            f'padding:2px 10px;font-size:0.82rem;font-weight:700">{label}</span>'
+        )
+
+    # ── History cards ──────────────────────────────────────────────────────
+    for rec in shown:
+        n_total = rec.ic_votes_buy + rec.ic_votes_hold + rec.ic_votes_sell
+        _asset_emoji = {
+            "crypto": "₿", "thai_stock": "🇹🇭", "thai_fund": "🏦",
+            "etf": "📦", "forex": "💱",
+        }.get(rec.asset_class, "📈")
+
+        # ── Card container ────────────────────────────────────────────────
+        with st.container():
+            # Top row: date + ticker + verdict
+            top_l, top_r = st.columns([4, 1])
+            with top_l:
+                st.markdown(
+                    f'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+                    f'<span style="font-size:0.75rem;color:#94a3b8">{rec.run_at}</span>'
+                    f'<span style="font-size:1rem;font-weight:800;color:#1e293b">'
+                    f'{_asset_emoji} {rec.ticker}</span>'
+                    f'<span style="font-size:0.82rem;color:#475569">{rec.company[:30]}</span>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+            with top_r:
+                if top_r.button("🗑", key=f"hdel_{rec.id}", help="Remove from history"):
+                    delete_history_record(rec.id)
+                    write_history_localstorage(get_history())
+                    st.rerun()
+
+            # Middle row: price + metrics + IC verdict + vote tally
+            mid1, mid2, mid3 = st.columns([1.2, 1.6, 2.2])
+            with mid1:
+                st.markdown(
+                    f'<div style="font-size:0.82rem;color:#475569">'
+                    f'💹 <b>{rec.price:.2f}</b> {rec.currency}'
+                    f'<br><span style="font-size:0.72rem">{rec.sector or rec.asset_class}</span>'
+                    f'<br><span style="font-size:0.72rem">{rec.market}</span></div>',
+                    unsafe_allow_html=True,
+                )
+            with mid2:
+                _pe  = f"P/E {rec.pe_ratio:.1f}" if rec.pe_ratio else ""
+                _tgt = f"Target {rec.analyst_target:.2f}" if rec.analyst_target else ""
+                _dir_badge = ""
+                if rec.trade_direction == "LONG":
+                    _dir_badge = '<span style="background:#dcfce7;color:#15803d;border-radius:4px;padding:1px 7px;font-size:0.75rem;font-weight:700">▲ LONG</span>'
+                elif rec.trade_direction == "SHORT":
+                    _dir_badge = '<span style="background:#fee2e2;color:#b91c1c;border-radius:4px;padding:1px 7px;font-size:0.75rem;font-weight:700">▼ SHORT</span>'
+                st.markdown(
+                    f'<div style="font-size:0.78rem;color:#64748b">'
+                    f'{"&nbsp;·&nbsp;".join(x for x in [_pe, _tgt] if x)}'
+                    f'</div>'
+                    f'<div style="margin-top:4px">{_dir_badge}</div>',
+                    unsafe_allow_html=True,
+                )
+            with mid3:
+                # IC vote tally line
+                if n_total > 0:
+                    _tally_html = (
+                        f'<span style="color:#16a34a;font-weight:700">🟢 {rec.ic_votes_buy}</span>'
+                        f'&nbsp;/&nbsp;'
+                        f'<span style="color:#ca8a04;font-weight:700">🟡 {rec.ic_votes_hold}</span>'
+                        f'&nbsp;/&nbsp;'
+                        f'<span style="color:#dc2626;font-weight:700">🔴 {rec.ic_votes_sell}</span>'
+                        f'&nbsp;<span style="color:#94a3b8;font-size:0.72rem">({n_total} voters)</span>'
+                    )
+                    # Vote bar
+                    _b_pct = round(rec.ic_votes_buy  / n_total * 100)
+                    _h_pct = round(rec.ic_votes_hold / n_total * 100)
+                    _s_pct = 100 - _b_pct - _h_pct
+                    _bar = (
+                        f'<div style="height:6px;border-radius:3px;overflow:hidden;'
+                        f'display:flex;background:#e2e8f0;margin-top:3px">'
+                        f'<div style="width:{_b_pct}%;background:#22c55e"></div>'
+                        f'<div style="width:{_h_pct}%;background:#eab308"></div>'
+                        f'<div style="width:{_s_pct}%;background:#ef4444"></div>'
+                        f'</div>'
+                    )
+                else:
+                    _tally_html = '<span style="color:#94a3b8;font-size:0.78rem">IC not run</span>'
+                    _bar = ""
+                st.markdown(
+                    _verdict_badge(rec.ic_verdict) + "&nbsp;&nbsp;" + _tally_html + _bar,
+                    unsafe_allow_html=True,
+                )
+
+            # ── Expandable detail ─────────────────────────────────────────
+            _has_ic       = bool(rec.ic_final_text.strip())
+            _has_research = bool(rec.research_text.strip())
+            _has_trade    = bool(rec.trade_card_text.strip())
+            if _has_ic or _has_research or _has_trade:
+                with st.expander("📋 View details", expanded=False):
+                    if _has_ic:
+                        st.markdown("**🏆 IC Final Verdict**")
+                        st.markdown(rec.ic_final_text)
+                    if _has_research:
+                        st.markdown("**🔍 Research Summary**")
+                        st.markdown(
+                            f'<div style="font-size:0.85rem;color:#334155;'
+                            f'border-left:3px solid #e2e8f0;padding-left:10px">'
+                            f'{rec.research_text}</div>',
+                            unsafe_allow_html=True,
+                        )
+                    if _has_trade:
+                        st.markdown("**🎯 Trade Card**")
+                        st.markdown(
+                            f'<div style="font-size:0.85rem;color:#334155;'
+                            f'border-left:3px solid #e2e8f0;padding-left:10px">'
+                            f'{rec.trade_card_text}</div>',
+                            unsafe_allow_html=True,
+                        )
+            st.markdown('<hr style="margin:10px 0;border-color:#f1f5f9">', unsafe_allow_html=True)
+
+    # ── Sync localStorage on every render of this page ──────────────────────
+    write_history_localstorage(get_history())
+
+
 def render_trade_log():
     """Render the Trade Log page (📓 tab)."""
     import time as _time
@@ -1279,6 +1511,12 @@ def render_dashboard(A: dict):
         f"MTF: **{len(mtf_data.get('confluence',{}).get('tfs',[]))} timeframes**"
     )
 
+    # ── Write history to localStorage when a new analysis was just saved ───
+    if st.session_state.get("_history_sync_needed"):
+        from tools.analysis_history import write_history_localstorage, get_history
+        write_history_localstorage(get_history())
+        st.session_state["_history_sync_needed"] = False
+
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -1291,7 +1529,7 @@ with st.sidebar:
     # ── Page navigation ───────────────────────────────────────────────────────
     _page = st.radio(
         "Navigate",
-        ["📊 Analysis", "📓 Trade Log"],
+        ["📊 Analysis", "📜 History", "📓 Trade Log"],
         horizontal=True,
         label_visibility="collapsed",
         key="page_nav",
@@ -1705,9 +1943,13 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ── Trade Log page — always handled before analysis routing ───────────────────
+# ── Non-analysis pages — always handled before analysis routing ───────────────
 if _page == "📓 Trade Log":
     render_trade_log()
+    st.stop()
+
+if _page == "📜 History":
+    render_history()
     st.stop()
 
 # ── Cached render ─────────────────────────────────────────────────────────────
@@ -2173,5 +2415,42 @@ st.session_state["analysis"] = {
     "ic_mode":           ic_mode,
     "run_at":            _dt.now().strftime("%Y-%m-%d %H:%M"),
 }
+
+# ── Auto-save to Analysis History ─────────────────────────────────────────────
+import uuid as _uuid_hist
+from tools.analysis_history import HistoryRecord, add_history_record
+
+_A        = st.session_state["analysis"]
+_tally    = ic_results.get("_vote_tally", {})
+_ic_txt   = (ic_results.get("CFAPortfolioManager") or {}).get("output", "")
+_ic_verd  = _parse_final_rating(_ic_txt) or (_verdict_from_tally(_tally) if _tally else "")
+_tc_txt   = trade_card_text or ""
+_tc_dir   = "LONG" if "LONG" in _tc_txt.upper() else "SHORT" if "SHORT" in _tc_txt.upper() else ""
+
+add_history_record(HistoryRecord(
+    id              = _uuid_hist.uuid4().hex[:8],
+    ticker          = ticker,
+    company         = company,
+    sector          = info.get("sector", ""),
+    market          = market,
+    asset_class     = asset_class,
+    mode            = mode,
+    ic_mode         = ic_mode,
+    run_at          = _A["run_at"],
+    price           = float(price or 0),
+    currency        = info.get("currency", "USD"),
+    pe_ratio        = info.get("pe_ratio"),
+    market_cap      = info.get("market_cap"),
+    analyst_target  = info.get("analyst_target"),
+    ic_verdict      = _ic_verd,
+    ic_votes_buy    = len(_tally.get("BUY",  [])),
+    ic_votes_hold   = len(_tally.get("HOLD", [])),
+    ic_votes_sell   = len(_tally.get("SELL", [])),
+    ic_final_text   = _ic_txt[:1200],
+    research_text   = (research_output or "")[:800],
+    trade_card_text = _tc_txt[:600],
+    trade_direction = _tc_dir,
+))
+st.session_state["_history_sync_needed"] = True   # trigger localStorage write in render_dashboard
 
 render_dashboard(st.session_state["analysis"])
