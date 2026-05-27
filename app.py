@@ -665,6 +665,213 @@ def render_etf_holdings(ticker: str):
     st.dataframe(df, use_container_width=True, hide_index=True)
 
 
+def render_trade_log():
+    """Render the Trade Log page (📓 tab)."""
+    import time as _time
+    import uuid as _uuid
+    from tools.trade_log import (
+        TradeRecord, get_trades, delete_trade, clear_trades,
+        update_prices, write_localstorage, ensure_loaded,
+        fetch_prices_parallel, trades_to_json, trades_from_json,
+    )
+
+    # ── Load from localStorage on first visit ──────────────────────────────
+    if not ensure_loaded():
+        # First render: st_javascript hasn't resolved yet — rerun once.
+        st.markdown(
+            '<div style="color:#94a3b8;font-size:0.8rem;padding:8px">⌛ Loading trade log…</div>',
+            unsafe_allow_html=True,
+        )
+        _time.sleep(0.15)
+        st.rerun()
+
+    trades = get_trades()
+
+    # ── Header ─────────────────────────────────────────────────────────────
+    st.markdown("## 📓 Trade Log")
+
+    n_buy  = sum(1 for t in trades if t.action == "BUY")
+    n_sell = sum(1 for t in trades if t.action == "SELL")
+
+    badge_html = (
+        f'<div style="display:flex;gap:10px;align-items:center;margin-bottom:16px">'
+        f'<span style="background:#dcfce7;color:#15803d;border-radius:20px;'
+        f'padding:3px 12px;font-size:0.8rem;font-weight:700">🟢 BUY: {n_buy}</span>'
+        f'<span style="background:#fee2e2;color:#b91c1c;border-radius:20px;'
+        f'padding:3px 12px;font-size:0.8rem;font-weight:700">🔴 SELL: {n_sell}</span>'
+        f'<span style="background:#f1f5f9;color:#475569;border-radius:20px;'
+        f'padding:3px 12px;font-size:0.8rem;font-weight:700">📋 Total: {len(trades)}</span>'
+        f'</div>'
+    )
+    st.markdown(badge_html, unsafe_allow_html=True)
+
+    # ── Action bar ─────────────────────────────────────────────────────────
+    btn_col1, btn_col2, btn_col3, btn_col4 = st.columns([2, 1.3, 1.2, 1])
+    with btn_col2:
+        do_refresh = st.button(
+            "🔄 Refresh All Prices",
+            use_container_width=True,
+            disabled=len(trades) == 0,
+            help="Fetches current price for every ticker simultaneously",
+        )
+    with btn_col3:
+        # Download as JSON
+        if trades:
+            st.download_button(
+                "⬇️ Export JSON",
+                data=trades_to_json(trades),
+                file_name="trade_log.json",
+                mime="application/json",
+                use_container_width=True,
+            )
+        else:
+            st.button("⬇️ Export JSON", disabled=True, use_container_width=True)
+    with btn_col4:
+        do_clear = st.button(
+            "🗑️ Clear All",
+            use_container_width=True,
+            disabled=len(trades) == 0,
+            type="secondary",
+        )
+
+    # ── Import from JSON ────────────────────────────────────────────────────
+    with st.expander("📂 Import / Restore trade log from JSON", expanded=False):
+        uploaded = st.file_uploader("Upload trade_log.json", type="json",
+                                    label_visibility="collapsed")
+        if uploaded:
+            try:
+                imported = trades_from_json(uploaded.read().decode())
+                if imported:
+                    # Merge: add only records not already in log (by id)
+                    existing_ids = {t.id for t in get_trades()}
+                    new_ones = [r for r in imported if r.id not in existing_ids]
+                    for r in new_ones:
+                        get_trades().insert(0, r)
+                    st.session_state["trade_log"] = get_trades()
+                    write_localstorage(get_trades())
+                    st.success(f"✅ Imported {len(new_ones)} new trades")
+                    st.rerun()
+                else:
+                    st.error("❌ File is empty or invalid")
+            except Exception as _e:
+                st.error(f"❌ Import failed: {_e}")
+
+    st.markdown("---")
+
+    # ── Refresh prices ──────────────────────────────────────────────────────
+    if do_refresh and trades:
+        tickers = list({t.ticker for t in trades})
+        with st.spinner(f"🔄 Fetching prices for {len(tickers)} tickers…"):
+            price_map = fetch_prices_parallel(tickers)
+        update_prices(price_map)
+        write_localstorage(get_trades())
+        ok_count = sum(1 for v in price_map.values() if v is not None)
+        st.success(f"✅ Updated {ok_count}/{len(tickers)} prices", icon="🔄")
+        st.rerun()
+
+    # ── Clear all ───────────────────────────────────────────────────────────
+    if do_clear:
+        clear_trades()
+        write_localstorage([])
+        st.rerun()
+
+    # ── Trade table ─────────────────────────────────────────────────────────
+    if not trades:
+        st.info(
+            "📭 No trades logged yet.\n\n"
+            "Run an analysis, then click **📓 Log Trade** in the IC Verdict tab.",
+            icon="💡",
+        )
+        return
+
+    # Column headers
+    hdr = st.columns([1.1, 0.85, 0.65, 0.9, 0.9, 1.0, 1.0, 1.6, 0.45])
+    _header_style = "font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.5px"
+    for col, label in zip(hdr, ["Date", "Ticker", "Action", "Entry", "Current", "P&L %", "P&L Abs", "IC Verdict", "Del"]):
+        col.markdown(f'<div style="{_header_style}">{label}</div>', unsafe_allow_html=True)
+
+    st.markdown('<hr style="margin:4px 0 8px;border-color:#e2e8f0">', unsafe_allow_html=True)
+
+    for trade in trades:
+        pnl_pct = trade.pnl_pct()
+        pnl_abs = trade.pnl_abs()
+
+        # Row background tint based on P&L
+        if pnl_pct is None:
+            _row_bg = "#f8fafc"
+        elif pnl_pct >= 0:
+            _row_bg = "#f0fdf4"   # light green
+        else:
+            _row_bg = "#fff1f2"   # light red
+
+        # P&L display strings
+        if pnl_pct is not None:
+            _pct_color = "#16a34a" if pnl_pct >= 0 else "#dc2626"
+            _sign = "+" if pnl_pct >= 0 else ""
+            _pct_str  = f'<span style="color:{_pct_color};font-weight:700">{_sign}{pnl_pct:.2f}%</span>'
+            _abs_sign = "+" if pnl_abs and pnl_abs >= 0 else ""
+            _abs_str  = f'<span style="color:{_pct_color}">{_abs_sign}{pnl_abs:.2f}</span>' if pnl_abs is not None else "—"
+        else:
+            _pct_str = '<span style="color:#94a3b8">—</span>'
+            _abs_str = '<span style="color:#94a3b8">—</span>'
+
+        # Current price display
+        _cur_str = (
+            f'<span style="font-weight:600">{trade.current_price:.2f}</span>'
+            if trade.current_price is not None
+            else '<span style="color:#94a3b8">—</span>'
+        )
+
+        # Action badge
+        if trade.action == "BUY":
+            _act_html = '<span style="background:#dcfce7;color:#15803d;border-radius:4px;padding:1px 7px;font-size:0.78rem;font-weight:700">BUY</span>'
+        else:
+            _act_html = '<span style="background:#fee2e2;color:#b91c1c;border-radius:4px;padding:1px 7px;font-size:0.78rem;font-weight:700">SELL</span>'
+
+        # Truncate long verdict label
+        _verdict = trade.ic_verdict[:20] + ("…" if len(trade.ic_verdict) > 20 else "")
+
+        row = st.columns([1.1, 0.85, 0.65, 0.9, 0.9, 1.0, 1.0, 1.6, 0.45])
+        row[0].markdown(
+            f'<div style="font-size:0.82rem;color:#475569">{trade.logged_at[:16]}</div>',
+            unsafe_allow_html=True,
+        )
+        row[1].markdown(
+            f'<div style="font-weight:700;color:#1e293b">{trade.ticker}</div>'
+            f'<div style="font-size:0.72rem;color:#94a3b8">{trade.currency}</div>',
+            unsafe_allow_html=True,
+        )
+        row[2].markdown(_act_html, unsafe_allow_html=True)
+        row[3].markdown(
+            f'<div style="font-size:0.85rem">{trade.entry_price:.2f}</div>',
+            unsafe_allow_html=True,
+        )
+        row[4].markdown(_cur_str, unsafe_allow_html=True)
+        row[5].markdown(_pct_str, unsafe_allow_html=True)
+        row[6].markdown(_abs_str, unsafe_allow_html=True)
+        row[7].markdown(
+            f'<div style="font-size:0.78rem;color:#475569" title="{trade.ic_verdict}">{_verdict}</div>'
+            f'<div style="font-size:0.7rem;color:#94a3b8">{trade.company[:18]}</div>',
+            unsafe_allow_html=True,
+        )
+        if row[8].button("🗑", key=f"del_{trade.id}", help="Delete this trade"):
+            delete_trade(trade.id)
+            write_localstorage(get_trades())
+            st.rerun()
+
+        st.markdown(
+            f'<hr style="margin:3px 0;border-color:{_row_bg if _row_bg != "#f8fafc" else "#f1f5f9"}">',
+            unsafe_allow_html=True,
+        )
+
+    if trades and trades[0].last_refreshed:
+        st.caption(f"🕐 Last price refresh: {trades[0].last_refreshed}")
+
+    # ── Sync localStorage on every render of this page ──────────────────────
+    # (keeps localStorage consistent even after deletes / imports)
+    write_localstorage(get_trades())
+
+
 def render_dashboard(A: dict):
     """
     Render the full results dashboard (metrics, MTF grid, PDF download, tabs)
@@ -878,6 +1085,49 @@ def render_dashboard(A: dict):
                     unsafe_allow_html=True,
                 )
                 st.caption(f"📌 Verdict derived from: **{_rating_src}**")
+
+                # ── Log Trade button ─────────────────────────────────────────
+                _lbl_clean = label.replace("⚡", "").replace("📈", "").replace("📉", "").strip()
+                _log_action = (
+                    "BUY"  if "BUY"  in _lbl_clean else
+                    "SELL" if "SELL" in _lbl_clean else
+                    None
+                )
+                if _log_action:
+                    _btn_color = "#16a34a" if _log_action == "BUY" else "#dc2626"
+                    _log_key   = f"log_trade_{ticker}_{A.get('run_at','')}"
+                    st.markdown(
+                        f'<style>div[data-testid="stButton"] button[kind="secondary"]'
+                        f'{{border-color:{_btn_color};color:{_btn_color}}}</style>',
+                        unsafe_allow_html=True,
+                    )
+                    if st.button(
+                        f"📓 Log Trade — {_log_action} {ticker}",
+                        key=_log_key,
+                        type="secondary",
+                        help="Save this trade to your Trade Log for P&L tracking",
+                    ):
+                        import uuid as _uuid
+                        from tools.trade_log import TradeRecord, add_trade, write_localstorage, get_trades
+                        from datetime import datetime as _dt2
+                        _rec = TradeRecord(
+                            id          = _uuid.uuid4().hex[:8],
+                            ticker      = ticker,
+                            company     = company,
+                            action      = _log_action,
+                            entry_price = float(price or 0),
+                            currency    = info.get("currency", "USD"),
+                            ic_verdict  = _lbl_clean,
+                            logged_at   = A.get("run_at") or _dt2.now().strftime("%Y-%m-%d %H:%M"),
+                        )
+                        add_trade(_rec)
+                        write_localstorage(get_trades())
+                        st.success(
+                            f"✅ Logged: **{_log_action} {ticker}** @ {price} {info.get('currency','USD')}  "
+                            f"→ go to **📓 Trade Log** tab to track P&L",
+                            icon="📓",
+                        )
+
                 st.markdown("### IC Final Verdict")
                 st.markdown(final_text)
                 st.markdown("---")
@@ -1033,9 +1283,19 @@ def render_dashboard(A: dict):
 with st.sidebar:
     st.markdown(
         '<div style="font-size:1.25rem;font-weight:800;color:#1e293b;padding:4px 0 2px">💎 Lastmercy Trading Pro</div>'
-        '<div style="font-size:0.75rem;color:#94a3b8;margin-bottom:16px">multi-agent AI · multi-provider</div>',
+        '<div style="font-size:0.75rem;color:#94a3b8;margin-bottom:12px">multi-agent AI · multi-provider</div>',
         unsafe_allow_html=True,
     )
+
+    # ── Page navigation ───────────────────────────────────────────────────────
+    _page = st.radio(
+        "Navigate",
+        ["📊 Analysis", "📓 Trade Log"],
+        horizontal=True,
+        label_visibility="collapsed",
+        key="page_nav",
+    )
+    st.markdown('<hr style="margin:10px 0 14px;border-color:#e2e8f0">', unsafe_allow_html=True)
 
     # ── Provider selection ────────────────────────────────────────────────────
     st.markdown("### 🤖 AI Provider")
@@ -1443,6 +1703,11 @@ st.markdown(
 </div>""",
     unsafe_allow_html=True,
 )
+
+# ── Trade Log page — always handled before analysis routing ───────────────────
+if _page == "📓 Trade Log":
+    render_trade_log()
+    st.stop()
 
 # ── Cached render ─────────────────────────────────────────────────────────────
 # If the user isn't launching a new run but a previous analysis exists (e.g. the
