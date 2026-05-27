@@ -1380,10 +1380,10 @@ ollama pull llama3.1:8b   # alternative
     st.markdown("### 💼 Portfolio")
     portfolio_size = st.number_input(
         "Portfolio Value (฿ / $)",
-        min_value=1000,
+        min_value=1,
         max_value=100_000_000,
         value=100_000,
-        step=10_000,
+        step=1_000,
         format="%d",
     )
     risk_pct = st.slider(

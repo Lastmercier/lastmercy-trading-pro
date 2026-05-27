@@ -3,11 +3,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, Optional
 from .base import BaseAgent, MODEL_FAST, MODEL_DEEP, MODEL_LITE
 
-# Appended to every voting IC agent's system prompt
+# Prepended to every voting IC agent's system prompt.
+# IMPORTANT: vote goes on the FIRST LINE so Groq token truncation never cuts it off.
 _VOTE_INSTRUCTION = (
-    "\n\nIMPORTANT: End your response with exactly one line in this format (nothing else after it):\n"
-    "[VOTE: BUY] or [VOTE: HOLD] or [VOTE: SELL]\n"
-    "Choose the one that best matches your analysis conclusion."
+    "\n\nSTRUCTURE YOUR RESPONSE EXACTLY AS FOLLOWS:\n"
+    "• Line 1 (mandatory): [VOTE: BUY] or [VOTE: HOLD] or [VOTE: SELL]  ← pick exactly ONE, nothing else on this line\n"
+    "• Lines 2 onward: your full analysis.\n"
+    "The [VOTE:] tag MUST be the very first line of your output — no preamble, no header before it."
 )
 
 IC_ROSTER = [
@@ -175,9 +177,13 @@ IC_ROSTER = [
         "name": "CFAPortfolioManager",
         "emoji": "🏆",
         "title": "CFA III Portfolio Manager — Final Verdict",
+        # NOTE: "{n_voters}" is a placeholder — InvestmentCommittee.run() replaces
+        # it with the actual number of voting agents before the call so the CFA PM
+        # never hallucinates a hardcoded committee size.
         "system": (
             "You are the CIO and a CFA Level III Portfolio Manager chairing the Investment Committee.\n"
-            "You have received inputs from 9 specialist analysts. Your job: synthesize into a final, actionable IC verdict.\n"
+            "You have received inputs from {n_voters} specialist analysts. Your job: synthesize into a final, actionable IC verdict.\n"
+            "IMPORTANT: For section 1, use the exact vote counts from the PRE-VOTE TALLY line in the context — do not invent numbers.\n"
             "Your output must include ALL of the following sections:\n"
             "1. COMMITTEE VOTE SUMMARY: BUY X / HOLD X / SELL X — note any strong dissents and why.\n"
             "2. FINAL RATING: STRONG BUY / BUY / HOLD / SELL / STRONG SELL (no hedging — pick one).\n"
@@ -211,9 +217,11 @@ class ICAgent(BaseAgent):
     def analyze(self, ticker: str, context: str, max_tokens: int = 500) -> str:
         from .base import _get_provider
         # Groq free tier: 6k TPM (llama-3.3-70b) / 20k TPM (llama-3.1-8b)
-        # Cap output tokens for voting agents to avoid burst rate limits
-        if _get_provider() == "groq" and max_tokens > 350:
-            max_tokens = 350
+        # Cap output tokens for voting agents: 500 gives enough room for
+        # [VOTE:] tag on line 1 + ~200-word analysis.  9 agents × 500 = 4,500 TPM,
+        # safely within the 6,000 TPM hard limit.
+        if _get_provider() == "groq" and max_tokens > 500:
+            max_tokens = 500
         prompt = (
             f"Asset under review: **{ticker}**\n\n"
             f"RESEARCH & DATA CONTEXT:\n{context}\n\n"
@@ -324,6 +332,11 @@ class InvestmentCommittee:
         synthesis += f"\n\n{tally_line}\n"
 
         # ── CFA PM — final synthesis ──────────────────────────────────────────
+        # Patch CFA PM system prompt with the ACTUAL voter count so it never
+        # hallucinates a hardcoded committee size in its COMMITTEE VOTE SUMMARY.
+        final_agent._system = final_agent._system.replace(
+            "{n_voters}", str(len(voting_agents))
+        )
         if on_agent_start:
             on_agent_start(final_agent.name)
         final_output = final_agent.analyze(ticker, synthesis, max_tokens=_pm_max_tokens)
