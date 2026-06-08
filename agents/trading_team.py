@@ -126,9 +126,19 @@ Pattern: [Specific pattern name + location]
 
 ## ⑥ EXECUTION PLAN
 Right now the market is: [assessment]
-Recommended action: [specific, actionable, immediate — BUY / SELL SHORT / WAIT]"""
+Recommended action: [specific, actionable, immediate — BUY / SELL SHORT / WAIT]
 
-        return self.run(SCOUT_SYS, prompt, max_tokens=1100)
+---
+## 🇹🇭 สรุปภาษาไทย — สัญญาณ Technical
+**ทิศทาง:** LONG (ซื้อ) / SHORT (ขายชอร์ต) / NO TRADE (รอดู) — [เหตุผล 1 ประโยค]
+**Phase Wyckoff:** [สะสม / แจกจ่าย / ขาขึ้น / ขาลง / สะสมใหม่] — [หลักฐานสั้นๆ]
+**แนวต้านสำคัญ:** R1 ___ | R2 ___ | R3 ___
+**แนวรับสำคัญ:** S1 ___ | S2 ___ | S3 ___
+**จุดเข้า:** ___ – ___ | **เงื่อนไข:** ___
+**Stop Loss:** ___ | **เป้าหมาย:** TP1 ___ | TP2 ___ | TP3 ___
+**แนะนำตอนนี้:** [ซื้อ ณ ___ / ขายชอร์ต ณ ___ / รอสัญญาณยืนยัน — ระบุราคาชัดเจน]"""
+
+        return self.run(SCOUT_SYS, prompt, max_tokens=1300)
 
     def scan(self, ticker: str, technicals: dict, timeframe: str = "swing") -> str:
         """Fallback when MTF data is unavailable."""
@@ -180,9 +190,17 @@ Pattern: ___ | Setup quality: HIGH / MEDIUM / LOW
 (Fill only the applicable direction from ①)
 
 ## ⑤ EXECUTION PLAN
-Recommended action right now: [BUY / SELL SHORT / WAIT — be specific]"""
+Recommended action right now: [BUY / SELL SHORT / WAIT — be specific]
 
-        return self.run(SCOUT_SYS, prompt, max_tokens=900)
+---
+## 🇹🇭 สรุปภาษาไทย — สัญญาณ Technical
+**ทิศทาง:** LONG (ซื้อ) / SHORT (ขายชอร์ต) / NO TRADE (รอดู) — [เหตุผล 1 ประโยค]
+**แนวโน้ม:** [ขาขึ้น/ขาลง/Sideways] ความแข็งแกร่ง: [แรง/กลาง/อ่อน]
+**แนวต้าน:** R1 ___ | R2 ___ &nbsp; **แนวรับ:** S1 ___ | S2 ___
+**จุดเข้า:** ___ – ___ | **Stop:** ___ | **TP1:** ___ | **TP2:** ___
+**แนะนำตอนนี้:** [ซื้อ / ขายชอร์ต / รอ — ระบุราคาชัดเจน]"""
+
+        return self.run(SCOUT_SYS, prompt, max_tokens=1100)
 
 
 class Trader(BaseAgent):
@@ -256,9 +274,23 @@ Catalyst to watch: ___
 
 HEDGE FUND CONVICTION
 Confidence: ___%
-Edge: [1 sentence — why does this trade have a positive expected value?]"""
+Edge: [1 sentence — why does this trade have a positive expected value?]
 
-        return self.run(TRADER_SYS, prompt, max_tokens=1000)
+---
+## 🇹🇭 Trade Card ภาษาไทย
+**ทิศทาง:** LONG ซื้อ / SHORT ขายชอร์ต | **คุณภาพ Setup:** สูง/กลาง/ต่ำ
+**โซนเข้า:** ___ – ___ | **เงื่อนไขเข้า:** ___
+**Stop Loss:** ___ (-___% จากจุดเข้า) | **เหตุผล Stop:** ___
+**เป้าหมายกำไร:**
+  • TP1: ___ (+___%) R:R = ___ → รับกำไร ___% ที่นี่
+  • TP2: ___ (+___%) R:R = ___
+  • TP3: ___ (+___%) R:R = ___
+**Options:** [กลยุทธ์ภาษาไทย หรือ "ใช้ Equity อย่างเดียว"]
+**สถานการณ์:** 📈 ดี (___%) → ___ | ➡️ พื้นฐาน (___%) → ___ | 📉 เลวร้าย (___%) → ___
+**ความเชื่อมั่น:** ___% — [เหตุผล 1 ประโยค ว่าทำไม trade นี้มี edge]
+**ยกเลิก Trade หาก:** ___"""
+
+        return self.run(TRADER_SYS, prompt, max_tokens=1250)
 
 
 class Risk(BaseAgent):

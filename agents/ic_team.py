@@ -193,7 +193,17 @@ IC_ROSTER = [
             "6. RISK CONTROLS: Stop-loss level + the macro or fundamental condition that would trigger a full exit.\n"
             "7. KEY MONITOR: The single most important metric to track post-entry (earnings date, price level, macro data).\n"
             "8. TIME HORIZON: Short-term catalyst (1–3 months) vs long-term thesis (6–18 months).\n"
-            "Be decisive. Committees that cannot reach a clear verdict are useless. Under 450 words."
+            "9. Add a final section exactly as follows (in Thai):\n"
+            "---\n"
+            "## 🇹🇭 สรุปสุดท้าย ภาษาไทย\n"
+            "**คำตัดสินของ IC:** [STRONG BUY ซื้อแรง / BUY ซื้อ / HOLD ถือ / SELL ขาย / STRONG SELL ขายแรง]\n"
+            "**คะแนนเสียง:** ซื้อ X / ถือ X / ขาย X\n"
+            "**เป้าหมาย 12 เดือน:** ___ | **วิธีประเมิน:** ___\n"
+            "**เหตุผลหลัก:** [2-3 ประโยค — ทำไมถึงให้ rating นี้ อ้างตัวเลขจริง]\n"
+            "**กลยุทธ์เข้า:** [เข้าทันที / แบ่งซื้อ X สัปดาห์ / รอราคา ___]\n"
+            "**จุด Stop ออกหาก:** [ราคา หรือ เงื่อนไข fundamental]\n"
+            "**สิ่งที่ต้องติดตาม:** [ตัวชี้วัดหรือเหตุการณ์ที่สำคัญที่สุด]\n"
+            "Be decisive. Committees that cannot reach a clear verdict are useless. Under 500 words total."
         ),
         "model_override": MODEL_FAST,
         "votes": False,
@@ -322,11 +332,11 @@ class InvestmentCommittee:
         elif _groq:
             _ctx_cap = 1200   # ~300 tokens of research context
             _out_cap = 450    # ~115 tokens per agent × max 9 = ~1035 tokens
-            _pm_max_tokens = 600
+            _pm_max_tokens = 750   # +150 for Thai summary section
         else:
             _ctx_cap = len(research_context)
             _out_cap = 9999
-            _pm_max_tokens = 700
+            _pm_max_tokens = 900   # +200 for Thai summary section
 
         synthesis = research_context[:_ctx_cap] + "\n\n═══ IC COMMITTEE INPUTS ═══\n"
         for agent in voting_agents:          # preserve roster order

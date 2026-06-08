@@ -117,9 +117,17 @@ Capital Return (ROE {_p(info.get('roe'))}):           __/5
 Rating: STRONG BUY / BUY / HOLD / SELL / STRONG SELL
 12-Month Price Target: ___ {info.get('currency','USD')}  (____% upside/downside from {info.get('current_price')})
 Conviction: HIGH / MEDIUM / LOW
-Key monitor: [The one metric to watch most closely]"""
+Key monitor: [The one metric to watch most closely]
 
-        return self.run(REESE_SYS, prompt, max_tokens=1500)
+---
+## 🇹🇭 สรุปภาษาไทย
+**ภาพรวม:** [2 ประโยค — บริษัท/สินทรัพย์นี้ทำอะไร และสถานะทางการเงินปัจจุบันเป็นอย่างไร]
+**คำแนะนำ:** [STRONG BUY ซื้อแรง / BUY ซื้อ / HOLD ถือ / SELL ขาย / STRONG SELL ขายแรง] — เป้าหมาย ___ (upside/downside ___%) ความเชื่อมั่น: สูง/กลาง/ต่ำ
+**เหตุผลหลัก:** [2-3 ข้อที่สนับสนุนคำแนะนำนี้ โดยอ้างตัวเลขจริงจากข้อมูล]
+**ความเสี่ยงสำคัญ:** 1.___ 2.___ 3.___
+**สิ่งที่ต้องติดตาม:** [ตัวชี้วัดหรือเหตุการณ์ที่สำคัญที่สุด]"""
+
+        return self.run(REESE_SYS, prompt, max_tokens=1800)
 
 
 class Max(BaseAgent):
@@ -159,9 +167,16 @@ What single assumption in Wizard's thesis is most likely to be wrong, and why?
 Target: ___  |  Path: [2-step explanation with specific price levels]
 
 ## SHORT SQUEEZE RISK (what kills the short thesis)
-Metric or event that would force covering: ___"""
+Metric or event that would force covering: ___
 
-        return self.run(MAX_SYS, prompt, max_tokens=900)
+---
+## 🇹🇭 สรุปภาษาไทย — มุมมองขาลง
+**ทฤษฎีขาลงหลัก:** [1 ประโยค — เหตุผลหลักที่เป็นความเสี่ยงสูงสุด พร้อมตัวเลข]
+**ความเสี่ยง 3 อันดับแรก:** 1. ___ (โอกาส ___%, ลงได้ -___%) 2. ___ 3. ___
+**ราคาเป้าหมายกรณีแย่:** ___ — เส้นทางลง: [2 ขั้นตอน]
+**สิ่งที่จะทำให้วิเคราะห์นี้ผิด:** [เงื่อนไขที่จะพลิกกลับเป็นขาขึ้น]"""
+
+        return self.run(MAX_SYS, prompt, max_tokens=1100)
 
 
 class Vera(BaseAgent):
@@ -209,6 +224,13 @@ Score: __/10
 Deductions: [list each deduction and reason]
 
 ## VERDICT
-CLEARED FOR COMMITTEE / REQUIRES REVISION — [1-sentence rationale]"""
+CLEARED FOR COMMITTEE / REQUIRES REVISION — [1-sentence rationale]
 
-        return self.run(VERA_SYS, prompt, max_tokens=700)
+---
+## 🇹🇭 ผลตรวจสอบความถูกต้อง
+**คะแนนความน่าเชื่อถือ:** ___/10 [เหตุผลการหักคะแนน ถ้ามี]
+**ประเด็นที่แก้ไขแล้ว:** [รายการ หรือ "ไม่มี"]
+**ช่องว่างข้อมูลสำคัญ:** [ข้อมูลที่ขาดซึ่งอาจเปลี่ยนผลวิเคราะห์]
+**สรุป:** [ผ่านการตรวจสอบ ✅ / ต้องแก้ไข ⚠️] — [เหตุผล 1 ประโยค]"""
+
+        return self.run(VERA_SYS, prompt, max_tokens=850)
