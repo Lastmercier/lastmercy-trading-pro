@@ -2358,8 +2358,8 @@ with ic_col:
                 f"RSI: {technicals.get('rsi')} | Volume 24H: {fmt_number(info.get('total_volume_usd'))}\n"
                 f"Above SMA50: {technicals.get('above_sma50')} | Above SMA200: {technicals.get('above_sma200')}\n"
                 f"{mtf_summary}\n"
-                f"RESEARCH SUMMARY:\n{research_output[:1200]}\n\n"
-                f"CONTRARIAN CRITIQUE:\n{critique_output[:600]}\n"
+                f"RESEARCH ANALYST SUMMARY:\n{research_output[:1500]}\n\n"
+                f"CONTRARIAN BEAR THESIS (Sage):\n{critique_output[:1000]}\n"
             )
         else:
             ic_context = (
@@ -2367,11 +2367,13 @@ with ic_col:
                 f"PRICE: {price} {info.get('currency','USD')} | Market Cap: {fmt_number(info.get('market_cap'))}\n"
                 f"P/E: {info.get('pe_ratio')} | P/B: {info.get('pb_ratio')} | ROE: {pct(info.get('roe'))}\n"
                 f"Revenue Growth: {pct(info.get('revenue_growth'))} | Net Margin: {pct(info.get('net_margin'))}\n"
-                f"RSI: {technicals.get('rsi')} | Above SMA200: {technicals.get('above_sma200')}\n"
-                f"Beta: {info.get('beta')} | Analyst Target: {info.get('analyst_target')}\n"
+                f"Gross Margin: {pct(info.get('gross_margin'))} | Op Margin: {pct(info.get('operating_margin'))}\n"
+                f"D/E: {info.get('debt_equity')} | Current Ratio: {info.get('current_ratio')}\n"
+                f"RSI: {technicals.get('rsi')} | Above SMA200: {technicals.get('above_sma200')} | MACD Hist: {technicals.get('macd_hist')}\n"
+                f"Beta: {info.get('beta')} | Analyst Target: {info.get('analyst_target')} | Recommendation: {info.get('recommendation')}\n"
                 f"{mtf_summary}\n"
-                f"RESEARCH ANALYST SUMMARY:\n{research_output[:1200]}\n\n"
-                f"CONTRARIAN CRITIQUE:\n{critique_output[:600]}\n"
+                f"RESEARCH ANALYST SUMMARY:\n{research_output[:1500]}\n\n"
+                f"CONTRARIAN BEAR THESIS (Sage):\n{critique_output[:1000]}\n"
             )
         if pdf_context:
             ic_context += f"\nFILING/REPORT CONTEXT:\n{pdf_context[:2000]}"

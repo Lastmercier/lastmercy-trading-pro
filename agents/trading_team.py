@@ -7,8 +7,10 @@ Rules:
 1. Identify the Wyckoff phase for the primary timeframe (Accumulation / Distribution / Markup / Markdown / Re-accumulation).
 2. Specify exact support and resistance levels — not ranges, specific prices.
 3. State the MTF confluence score (% of timeframes aligned bullish/bearish).
-4. Define the entry trigger condition precisely (e.g. "close above X on volume > Y").
+4. Define the entry trigger condition precisely (e.g. "close above X on volume > Y" OR "break below Y on volume > Z").
 5. Label the setup type: Breakout / Pullback-to-support / Range-fade / Reversal / Continuation.
+6. CRITICAL — Direction is DATA-DRIVEN: If MTF confluence is ≥55% bearish, build a SHORT setup. If ≥55% bullish, build a LONG setup. If 45–54% either way, declare NO TRADE.
+7. NEVER default to LONG simply because it is the conventional direction. Price targets for LONG are resistances above entry; price targets for SHORT are supports below entry.
 Never give vague levels like "around support" — give the exact price."""
 
 # ── Trader ────────────────────────────────────────────────────────────────────
@@ -18,10 +20,13 @@ Your trade recommendations are used for live capital deployment. You produce two
   Layer 2 — Options overlay for asymmetric risk/reward (Bull Call Spread, Put hedge, Straddle, etc.)
 Rules:
 1. All price levels must be specific numbers, not ranges.
-2. State the exact entry trigger condition (not just "buy here").
+2. State the exact entry trigger condition (not just "buy here" or "sell here").
 3. Options layer must specify: structure · strike · expiry · net debit/credit · max profit · max loss.
 4. Include a 3-scenario probability matrix.
-5. State conviction as a percentage and explain the edge."""
+5. State conviction as a percentage and explain the edge.
+6. CRITICAL — FOLLOW SCOUT'S DIRECTION. If Scout says SHORT, your card MUST be SHORT. Do NOT flip to LONG.
+7. For LONG trades: Stop = Entry − 1.5×ATR (support-based). For SHORT trades: Stop = Entry + 1.5×ATR (resistance-based). TPs for LONG are above entry; TPs for SHORT are below entry. R:R is always positive.
+8. If Scout declares NO TRADE, state "NO TRADE — insufficient edge" and explain why."""
 
 # ── Risk ──────────────────────────────────────────────────────────────────────
 RISK_SYS = """You are the Chief Risk Officer at a multi-billion dollar hedge fund.
@@ -66,6 +71,13 @@ class Scout(BaseAgent):
         bull_pct    = confluence.get("bull_pct", 0)
         bear_pct    = confluence.get("bear_pct", 0)
 
+        # Determine direction label for the prompt
+        _dir_hint = (
+            "LONG (bullish confluence dominant)"   if bull_pct >= 55 else
+            "SHORT (bearish confluence dominant)"  if bear_pct >= 55 else
+            "NO TRADE (confluence too mixed for a directional bet)"
+        )
+
         prompt = f"""Perform a professional top-down MTF technical analysis on {ticker} for {timeframe} trading.
 
 ══ MULTI-TIMEFRAME DATA ══
@@ -82,52 +94,57 @@ ATR(14) {technicals.get('atr')} | RSI(14) {technicals.get('rsi')}
 SMA20 {technicals.get('sma20')} | SMA50 {technicals.get('sma50')} | SMA200 {technicals.get('sma200')}
 BB Upper {technicals.get('bb_upper')} / Lower {technicals.get('bb_lower')}
 
-REQUIRED OUTPUT — use exact headers:
+REQUIRED OUTPUT — use exact headers in this order:
 
-## WYCKOFF PHASE ANALYSIS
+## ① TRADE DIRECTION  ← fill this FIRST before any other section
+Confluence verdict: Bull {bull_pct:.0f}% / Bear {bear_pct:.0f}%
+Suggested direction: {_dir_hint}
+Final direction chosen: LONG / SHORT / NO TRADE  (state your reasoning in 1 sentence)
+If NO TRADE → explain what would need to change to generate a valid setup, then skip sections ③–⑥.
+
+## ② WYCKOFF PHASE ANALYSIS
 Primary trend structure (Monthly/Weekly): [Phase + evidence]
 Intermediate structure (Daily/4H): [Phase + evidence, aligned or diverging?]
 
-## INSTITUTIONAL PRICE LEVELS
-Key Resistance levels (specify exact prices, explain why each matters):
-  R1: ___  |  R2: ___  |  R3: ___
-Key Support levels:
-  S1: ___  |  S2: ___  |  S3: ___
-VWAP / Volume-based level (if applicable): ___
+## ③ INSTITUTIONAL PRICE LEVELS
+Key Resistance levels (exact prices):  R1: ___ | R2: ___ | R3: ___
+Key Support levels (exact prices):     S1: ___ | S2: ___ | S3: ___
 
-## MTF CONFLUENCE SCORE
-{bull_pct:.0f}% bullish / {bear_pct:.0f}% bearish — interpretation:
-Highest-confidence timeframe alignment: ___
-Conflicting signals (if any): ___
-
-## SETUP CLASSIFICATION
-Type: Breakout / Pullback-to-support / Range-fade / Reversal / Continuation
+## ④ SETUP CLASSIFICATION
+Type: Breakout / Pullback / Reversal / Continuation / Distribution / Capitulation
 Confidence: HIGH / MEDIUM / LOW
 Pattern: [Specific pattern name + location]
 
-## ENTRY TRIGGER (exact conditions, not approximations)
-Entry condition: ___
-Confirmation required: ___
-Entry price zone: ___ – ___
+## ⑤ ENTRY & RISK  (use direction from ①)
+[LONG]  Entry zone: ___ – ___ | Trigger: close above ___ on volume > avg
+         Stop = structural support or {p - 1.5*(technicals.get('atr') or 0):.4g} (1.5× ATR) — whichever is tighter
+         TP1: ___ (next resistance)  TP2: ___  TP3: ___  | R:R at TP1: ___
+[SHORT] Entry zone: ___ – ___ | Trigger: close below ___ on volume > avg
+         Stop = structural resistance or {p + 1.5*(technicals.get('atr') or 0):.4g} (1.5× ATR) — whichever is tighter
+         TP1: ___ (next support)  TP2: ___  TP3: ___  | R:R at TP1: ___
+(Fill only the applicable direction from ①)
 
-## STOP LOSS PLACEMENT
-Stop: ___  |  Logic: [Why this level invalidates the setup]
-ATR-based stop (1.5× ATR from entry): ___
-
-## PRICE TARGETS (technical basis)
-TP1: ___ (next resistance / measured move)
-TP2: ___ (major resistance / 52W range extension)
-TP3: ___ (extension target)
-
-## EXECUTION PLAN
+## ⑥ EXECUTION PLAN
 Right now the market is: [assessment]
-Recommended action: [specific, actionable, immediate]"""
+Recommended action: [specific, actionable, immediate — BUY / SELL SHORT / WAIT]"""
 
         return self.run(SCOUT_SYS, prompt, max_tokens=1100)
 
     def scan(self, ticker: str, technicals: dict, timeframe: str = "swing") -> str:
         """Fallback when MTF data is unavailable."""
         p = technicals.get("current_price", 0)
+        # Infer direction from single-timeframe indicators
+        _rsi   = technicals.get("rsi") or 50
+        _above200 = technicals.get("above_sma200")
+        _macd_h = technicals.get("macd_hist") or 0
+        _single_bias = "bullish" if (_above200 and _macd_h > 0 and _rsi > 50) else \
+                       "bearish" if (not _above200 and _macd_h < 0 and _rsi < 50) else "mixed"
+        _dir_hint2 = (
+            "LONG"     if _single_bias == "bullish" else
+            "SHORT"    if _single_bias == "bearish" else
+            "NO TRADE"
+        )
+
         prompt = f"""Perform a professional technical analysis on {ticker} for {timeframe} trading.
 (Note: Multi-timeframe data unavailable — use single-timeframe data below.)
 
@@ -140,24 +157,30 @@ SMA20 {technicals.get('sma20')} | SMA50 {technicals.get('sma50')} | SMA200 {tech
 BB Upper {technicals.get('bb_upper')} / Mid {technicals.get('bb_mid','N/A')} / Lower {technicals.get('bb_lower')}
 ATR(14) {technicals.get('atr')} | 52W High {technicals.get('high_52w')} / Low {technicals.get('low_52w')}
 
-## TREND STRUCTURE
+REQUIRED OUTPUT — use exact headers:
+
+## ① TRADE DIRECTION  ← fill this FIRST
+Indicator alignment: {_single_bias.upper()} bias (RSI {_rsi:.0f}, MACD {'positive' if _macd_h > 0 else 'negative'}, {'above' if _above200 else 'below'} SMA200)
+Suggested direction: {_dir_hint2}
+Final direction: LONG / SHORT / NO TRADE (state your 1-sentence reasoning)
+If NO TRADE → explain what change would create a valid setup, then skip ③–④.
+
+## ② TREND STRUCTURE
 Primary trend: [Uptrend / Downtrend / Sideways] | Strength: [Strong / Moderate / Weak]
 Evidence: [specific price levels confirming trend]
 
-## KEY LEVELS
+## ③ KEY LEVELS & SETUP
 Resistance: R1 ___ | R2 ___ | R3 ___
 Support:    S1 ___ | S2 ___ | S3 ___
+Pattern: ___ | Setup quality: HIGH / MEDIUM / LOW
 
-## SETUP & MOMENTUM
-Pattern: ___ | RSI status: ___ | Volume confirmation: Y/N
-Setup quality: HIGH / MEDIUM / LOW
+## ④ ENTRY & RISK  (direction-matched)
+[LONG]  Entry: ___ – ___ | Trigger: ___ | Stop: ___ | TP1: ___ | TP2: ___ | R:R: ___
+[SHORT] Entry: ___ – ___ | Trigger: ___ | Stop: ___ | TP1: ___ | TP2: ___ | R:R: ___
+(Fill only the applicable direction from ①)
 
-## ENTRY TRIGGER
-Entry condition (exact): ___  |  Entry zone: ___ – ___
-Stop: ___  |  TP1: ___ | TP2: ___ | TP3: ___
-
-## EXECUTION PLAN
-Recommended action right now: ___"""
+## ⑤ EXECUTION PLAN
+Recommended action right now: [BUY / SELL SHORT / WAIT — be specific]"""
 
         return self.run(SCOUT_SYS, prompt, max_tokens=900)
 
@@ -170,12 +193,18 @@ class Trader(BaseAgent):
         price = technicals.get("current_price", 0)
         atr   = technicals.get("atr", 0)
 
+        long_stop  = round(price - 1.5 * (atr or 0), 4)
+        short_stop = round(price + 1.5 * (atr or 0), 4)
+
         prompt = f"""Generate a professional two-layer trade recommendation for {ticker}.
+IMPORTANT: Read Scout's direction from section ① of the analysis below and FOLLOW IT exactly.
+If Scout says SHORT → your trade card MUST be SHORT. If NO TRADE → state that and stop.
 
 Current Price: {price} | ATR(14): {atr}
+ATR reference stops: LONG stop = {long_stop} (entry − 1.5×ATR) | SHORT stop = {short_stop} (entry + 1.5×ATR)
 
-Scout's Technical Analysis:
-{scan[:900]}
+Scout's Technical Analysis (direction is stated in section ①):
+{scan[:1000]}
 
 Fundamental context:
 {research_summary[:400]}
@@ -183,21 +212,23 @@ Fundamental context:
 ━━━ REQUIRED TRADE CARD FORMAT ━━━
 
 ## SETUP SUMMARY
+Direction: [LONG / SHORT / NO TRADE — copied from Scout's section ①]
 Pattern: ___ | Timeframe: ___ | Quality: HIGH / MEDIUM / LOW
 
 ─────────────────────────────────────────────────────────
 LAYER 1 — DIRECTIONAL EQUITY TRADE
 ─────────────────────────────────────────────────────────
-Direction:  LONG (Buy) / SHORT (Sell)
+Direction:  LONG (Buy) / SHORT (Sell to open)   ← must match Scout
 Entry Zone: ___ – ___
 Entry Trigger (exact condition): ___
 
-Stop Loss:  ___ | Distance: -___% from entry | Basis: ATR / Structure
-  → 1.5× ATR stop = {price - 1.5*(atr or 0):.2f} (long) / {price + 1.5*(atr or 0):.2f} (short)
+Stop Loss:  ___
+  Basis: [structure level / ATR — cite specific price and logic]
+  Distance from entry: ___% | Max acceptable loss per unit: ___
 
-TP1: ___  (+___%)  R:R = ___
-TP2: ___  (+___%)  R:R = ___
-TP3: ___  (+___%)  R:R = ___
+TP1: ___  (___% from entry)  R:R = ___    ← TPs ABOVE entry if LONG; BELOW entry if SHORT
+TP2: ___  (___% from entry)  R:R = ___
+TP3: ___  (___% from entry)  R:R = ___
 
 Partial profit plan: Take ___% at TP1, trail remainder to ___
 Max holding period: ___
@@ -205,17 +236,17 @@ Max holding period: ___
 ─────────────────────────────────────────────────────────
 LAYER 2 — OPTIONS OVERLAY
 ─────────────────────────────────────────────────────────
-Strategy: [Bull Call Spread / Long Call / Protective Put / Straddle / etc.]
+Strategy: [Bull Call Spread / Bear Put Spread / Long Put / Straddle / etc. — match direction]
 Structure: Buy ___ / Sell ___  |  Expiry: ___  |  Net Cost: ___
-Max Profit: ___ | Max Loss: ___ | Breakeven at expiry: ___
-[Write "OPTIONS LAYER: N/A — use equity only" if not appropriate]
+Max Profit: ___ | Max Loss: ___ | Breakeven: ___
+[Write "OPTIONS LAYER: N/A — use equity only" if options not appropriate]
 
 ─────────────────────────────────────────────────────────
 SCENARIO MATRIX
 ─────────────────────────────────────────────────────────
 Bull scenario  (___% prob): price → ___  |  Action: ___
 Base scenario  (___% prob): price → ___  |  Action: ___
-Bear/Stop      (___% prob): price → ___  |  Action: ___
+Bear scenario  (___% prob): price → ___  |  Action: ___
 
 ─────────────────────────────────────────────────────────
 TRADE MANAGEMENT
@@ -225,7 +256,7 @@ Catalyst to watch: ___
 
 HEDGE FUND CONVICTION
 Confidence: ___%
-Edge: [1 sentence explaining why this trade has positive expected value]"""
+Edge: [1 sentence — why does this trade have a positive expected value?]"""
 
         return self.run(TRADER_SYS, prompt, max_tokens=1000)
 

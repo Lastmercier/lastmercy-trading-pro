@@ -552,8 +552,9 @@ class MarketData:
             sig    = macd.ewm(span=9, adjust=False).mean()
             hist   = macd - sig
             hv     = _v(hist.iloc[-1])
-            hv_prev= _v(hist.iloc[-2]) if n >= 28 else 0
-            out["macd_hist"] = hv
+            hv_prev= _v(hist.iloc[-2]) if n >= 28 else None
+            out["macd_hist"]      = hv
+            out["macd_hist_prev"] = hv_prev   # stored for bias direction scoring
             if hv and hv > 0 and (hv_prev or 0) <= 0:
                 out["macd_signal_th"] = "Golden Cross ✅"
             elif hv and hv < 0 and (hv_prev or 0) >= 0:
@@ -574,22 +575,42 @@ class MarketData:
             if avg and avg > 0:
                 out["vol_ratio"] = _v(float(last["Volume"]) / float(avg))
 
-        # ── Bias score ────────────────────────────────────────────────────────
+        # ── Bias score (4 signals, max 5 pts each side) ─────────────────────────
+        # Signal 1: Trend via SMA cross (2 pts — strongest structural signal)
         bull = 0; bear = 0
         if out.get("trend") == "BULLISH":   bull += 2
         elif out.get("trend") == "BEARISH": bear += 2
-        rv = out.get("rsi")
-        if rv:
-            if rv > 55: bull += 1
-            elif rv < 45: bear += 1
-        mh = out.get("macd_hist")
-        if mh:
-            if mh > 0: bull += 1
-            else:       bear += 1
 
-        if bull > bear + 1:
+        # Signal 2: RSI momentum (1 pt)
+        # RSI >= 70 (overbought) earns NO extra bull credit — warns of reversal.
+        rv = out.get("rsi")
+        if rv is not None:
+            if 55 < rv < 70:   bull += 1   # moderately bullish momentum
+            elif rv < 45:      bear += 1   # bearish momentum (incl. deep oversold)
+            # rv >= 70 → overbought caution: no extra bull credit
+
+        # Signal 3: MACD histogram DIRECTION, not just sign (1 pt)
+        # Growing histogram = accelerating momentum; shrinking = fading.
+        mh      = out.get("macd_hist")
+        mh_prev = out.get("macd_hist_prev")
+        if mh is not None:
+            if mh_prev is not None:
+                if mh > 0 and mh >= mh_prev:    bull += 1   # positive & holding/growing
+                elif mh < 0 and mh <= mh_prev:  bear += 1   # negative & deepening
+                # positive but shrinking, or negative but recovering → neutral (0 pts)
+            else:
+                if mh > 0: bull += 1
+                else:      bear += 1
+
+        # Signal 4: Short-term price momentum (1 pt)
+        cp = out.get("change_pct", 0) or 0
+        if   cp >  2.0: bull += 1
+        elif cp < -2.0: bear += 1
+
+        # Verdict — require clear 2-point advantage to avoid noise-driven signals
+        if bull >= bear + 2:
             out["bias"] = "BUY";     out["bias_th"] = "ซื้อ";    out["bias_dot"] = "🟢"
-        elif bear > bull + 1:
+        elif bear >= bull + 2:
             out["bias"] = "SELL";    out["bias_th"] = "ขาย";   out["bias_dot"] = "🔴"
         else:
             out["bias"] = "NEUTRAL"; out["bias_th"] = "รอดู";  out["bias_dot"] = "🟡"
