@@ -1,5 +1,4 @@
 import re
-import contextvars as _cv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, Optional
 from .base import BaseAgent, MODEL_FAST, MODEL_DEEP, MODEL_LITE
@@ -277,15 +276,14 @@ class InvestmentCommittee:
             vote   = _parse_vote(output)
             return agent, output, vote
 
-        # Capture calling context so per-session API keys propagate to workers.
-        _ctx = _cv.copy_context()
-
-        def _run_one_ctx(agent: ICAgent):
-            return _ctx.run(_run_one, agent)
-
+        # Worker threads are created via threading.Thread(copy_context()) internally,
+        # so they automatically inherit the calling thread's ContextVar values
+        # (including per-session API keys set via set_session_keys()).
+        # No ctx.run() wrapper is needed — and sharing one Context across
+        # concurrent threads would cause "already entered" errors.
         max_workers = min(len(voting_agents), 10)
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            futures = {pool.submit(_run_one_ctx, a): a for a in voting_agents}
+            futures = {pool.submit(_run_one, a): a for a in voting_agents}
             for future in as_completed(futures):
                 agent, output, vote = future.result()
                 if vote and vote in vote_tally:

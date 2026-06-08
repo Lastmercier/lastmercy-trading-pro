@@ -2125,16 +2125,15 @@ from tools.market_data import MarketData
 from tools.pdf_reader import extract_text
 
 # ── Inject per-session API keys into context vars ─────────────────────────────
-# This must happen before any thread pools are created so workers inherit it.
-import contextvars as _ctxvars
+# Must be called BEFORE any ThreadPoolExecutor is created.
+# Python's threading.Thread copies the calling thread's context at creation
+# time, so all worker threads that are spawned AFTER this call will
+# automatically inherit these keys — no ctx.run() wrapper needed.
 from agents.base import set_session_keys as _set_session_keys
 _set_session_keys(
     groq_key      = st.session_state.get("_user_groq_key",      "").strip(),
     anthropic_key = st.session_state.get("_user_anthropic_key", "").strip(),
 )
-# Snapshot the full context now — every pool.submit() call below will wrap
-# its function in this context so session keys reach all worker threads.
-_analysis_ctx = _ctxvars.copy_context()
 
 # ── Pipeline execution ────────────────────────────────────────────────────────
 ticker_raw = ticker_input.strip()
@@ -2329,8 +2328,8 @@ def _run_scout():
             else s.scan(ticker, technicals, tf_label))
 
 with _TPE(max_workers=2) as _pool:
-    _fw = _pool.submit(_analysis_ctx.run, _run_wizard)
-    _fs = _pool.submit(_analysis_ctx.run, _run_scout) if ph_scout else None
+    _fw = _pool.submit(_run_wizard)
+    _fs = _pool.submit(_run_scout) if ph_scout else None
     try:
         research_output = _fw.result(timeout=150)
     except Exception as _wiz_err:
@@ -2364,8 +2363,8 @@ def _run_trader():
     return Trader().generate_signal(ticker, scan_output, research_output, technicals)
 
 with _TPE(max_workers=2) as _pool:
-    _fsage   = _pool.submit(_analysis_ctx.run, _run_sage)
-    _ftrader = _pool.submit(_analysis_ctx.run, _run_trader) if ph_trader else None
+    _fsage   = _pool.submit(_run_sage)
+    _ftrader = _pool.submit(_run_trader) if ph_trader else None
     try:
         critique_output = _fsage.result(timeout=120)
     except Exception as _e:
@@ -2394,8 +2393,8 @@ def _run_risk():
     return RiskAgent().size_position(ticker, trade_card_text, portfolio_size, risk_pct)
 
 with _TPE(max_workers=2) as _pool:
-    _fpriest = _pool.submit(_analysis_ctx.run, _run_priest)
-    _frisk   = _pool.submit(_analysis_ctx.run, _run_risk) if ph_risk else None
+    _fpriest = _pool.submit(_run_priest)
+    _frisk   = _pool.submit(_run_risk) if ph_risk else None
     try:
         fact_check_output = _fpriest.result(timeout=120)
     except Exception as _e:
