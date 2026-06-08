@@ -1521,25 +1521,41 @@ with st.sidebar:
     )
     # ── Data persistence ─────────────────────────────────────────────────────
     try:
-        from tools.persistence import get_uid as _sb_uid_fn
+        from tools.persistence import get_uid as _sb_uid_fn, supabase_configured as _sb_ok
         _sb_uid = _sb_uid_fn()
         _uid_in_url = (st.query_params.get("uid", "") == _sb_uid)
-        if _uid_in_url:
-            # User already has the correct URL — show confirmation
+        _db_live = _sb_ok()
+
+        # Row 1 — Database status badge
+        if _db_live:
             st.markdown(
                 '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;'
-                'padding:7px 12px;font-size:0.72rem;color:#15803d;margin-bottom:4px">'
-                '✅ <b>Data URL active.</b> Bookmark this page — your Trade Log '
-                '&amp; History will be here on your next visit.</div>',
+                'padding:6px 12px;font-size:0.72rem;color:#15803d;margin-bottom:4px">'
+                '🗄️ <b>Database connected</b> — data survives server restarts.</div>',
                 unsafe_allow_html=True,
             )
         else:
-            # First visit or plain URL — prompt user to lock in their UID
+            st.markdown(
+                '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;'
+                'padding:6px 12px;font-size:0.72rem;color:#9a3412;margin-bottom:4px">'
+                '⚠️ <b>Session cache only</b> — data lost on server restart. '
+                'Connect Supabase for permanent storage.</div>',
+                unsafe_allow_html=True,
+            )
+
+        # Row 2 — URL lock status / button
+        if _uid_in_url:
+            st.markdown(
+                '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;'
+                'padding:6px 12px;font-size:0.72rem;color:#15803d;margin-bottom:4px">'
+                '🔗 <b>Data URL active.</b> Bookmark this page to restore your data.</div>',
+                unsafe_allow_html=True,
+            )
+        else:
             st.markdown(
                 '<div style="background:#fef9c3;border:1px solid #fde047;border-radius:8px;'
-                'padding:7px 12px;font-size:0.72rem;color:#854d0e;margin-bottom:4px">'
-                '💡 <b>Save your data:</b> click below to stamp your ID into the URL, '
-                'then <b>bookmark</b> it to restore Trade Log &amp; History later.</div>',
+                'padding:6px 12px;font-size:0.72rem;color:#854d0e;margin-bottom:4px">'
+                '💡 <b>Save your data:</b> lock your ID into the URL, then bookmark it.</div>',
                 unsafe_allow_html=True,
             )
             if st.button("💾 Lock Data to This URL",
