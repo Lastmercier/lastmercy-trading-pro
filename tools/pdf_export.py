@@ -98,8 +98,11 @@ class _Report(FPDF):
     def header(self):
         self.set_font("Thai", "", 9)
         self.set_text_color(148, 163, 184)
-        self.cell(0, 6, "Lastmercy Trading Pro", align="L")
-        self.cell(0, 6, self.meta_line, align="R", new_x="LMARGIN", new_y="NEXT")
+        # Use explicit half-widths so both cells render on the same line
+        _pw = self.w - self.l_margin - self.r_margin
+        self.cell(_pw * 0.5, 6, "Lastmercy Trading Pro", align="L")
+        self.cell(_pw * 0.5, 6, self.meta_line, align="R",
+                  new_x="LMARGIN", new_y="NEXT")
         self.set_draw_color(226, 232, 240)
         self.line(self.l_margin, self.get_y() + 1,
                   self.w - self.r_margin, self.get_y() + 1)
@@ -141,7 +144,23 @@ class _Report(FPDF):
         cleaned = _clean(text)
         if not cleaned:
             cleaned = "(ไม่มีข้อมูล)"
-        self.multi_cell(0, 6, cleaned, new_x="LMARGIN", new_y="NEXT")
+
+        # Split into paragraphs (double newline) so each paragraph is a
+        # separate multi_cell call.  This lets fpdf2's auto_page_break fire
+        # reliably between paragraphs instead of trying to handle one giant
+        # string that can confuse the page-break engine.
+        paras = [p.strip() for p in cleaned.split("\n\n") if p.strip()]
+        if not paras:
+            paras = [cleaned]
+
+        for i, para in enumerate(paras):
+            # Explicit check: if less than ~2 lines worth of space remains,
+            # start a new page before writing the paragraph.
+            if self.get_y() > self.page_break_trigger - 12:
+                self.add_page()
+            self.multi_cell(0, 6, para, new_x="LMARGIN", new_y="NEXT")
+            if i < len(paras) - 1:
+                self.ln(2)
         self.ln(1)
 
 

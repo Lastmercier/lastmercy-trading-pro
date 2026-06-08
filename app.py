@@ -1159,15 +1159,34 @@ def render_dashboard(A: dict):
     dl_col, _ = st.columns([1, 2])
     with dl_col:
         try:
+            import base64 as _b64
             from tools.pdf_export import build_pdf
             from datetime import date
             pdf_bytes = build_pdf(A)
+            _pdf_filename = f"{ticker}_Lastmercy_{date.today().isoformat()}.pdf"
+
+            # Desktop: standard Streamlit download button
             st.download_button(
                 "📥 Download PDF Report",
                 data=pdf_bytes,
-                file_name=f"{ticker}_Lastmercy_{date.today().isoformat()}.pdf",
+                file_name=_pdf_filename,
                 mime="application/pdf",
                 use_container_width=True,
+            )
+
+            # Mobile: HTML anchor with application/octet-stream forces the
+            # browser to "Save to Files" instead of opening inline in Safari
+            # QuickLook (which only shows page 1 preview on iOS).
+            _b64_pdf = _b64.b64encode(pdf_bytes).decode()
+            st.markdown(
+                f'<a href="data:application/octet-stream;base64,{_b64_pdf}" '
+                f'download="{_pdf_filename}" '
+                f'style="display:block;text-align:center;padding:7px 12px;'
+                f'background:#f0f4f8;border:1px solid #cbd5e1;border-radius:8px;'
+                f'color:#4f46e5;font-size:0.8rem;font-weight:600;margin-top:6px;'
+                f'text-decoration:none;letter-spacing:0.2px">'
+                f'📱 บันทึกไฟล์ PDF (มือถือ)</a>',
+                unsafe_allow_html=True,
             )
         except Exception as e:
             st.warning(f"PDF generation failed: {e}", icon="⚠️")
