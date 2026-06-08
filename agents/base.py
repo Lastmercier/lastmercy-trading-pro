@@ -6,11 +6,50 @@ BaseAgent — supports three providers:
 
 Provider is read from os.environ["AI_PROVIDER"] at call time,
 so the sidebar can switch it without restarting the app.
+
+Per-session API keys
+────────────────────
+In a shared deployment each user brings their own API key.
+Keys are stored in contextvars.ContextVar so they are:
+  • Isolated per Streamlit session  (no cross-user leakage)
+  • Auto-propagated to ThreadPoolExecutor workers via copy_context()
+  • NOT written to os.environ (which is process-wide and would be shared)
+
+Call set_session_keys() once per analysis run from the main thread.
 """
 
 import os
 import time
+import contextvars as _cv
 from typing import Generator
+
+# ── Per-context (per-session) API key storage ─────────────────────────────────
+_ctx_groq_key      = _cv.ContextVar("groq_api_key",      default="")
+_ctx_anthropic_key = _cv.ContextVar("anthropic_api_key", default="")
+
+
+def set_session_keys(*, groq_key: str = "", anthropic_key: str = "") -> None:
+    """
+    Store API keys for the current context (Streamlit session).
+
+    Call this once per analysis run from the main Streamlit thread.
+    All child threads spawned by ThreadPoolExecutor via copy_context().run()
+    will inherit these values automatically.
+    """
+    if groq_key:
+        _ctx_groq_key.set(groq_key)
+    if anthropic_key:
+        _ctx_anthropic_key.set(anthropic_key)
+
+
+def _get_groq_api_key() -> str:
+    """User's session key → server env fallback."""
+    return _ctx_groq_key.get() or os.environ.get("GROQ_API_KEY", "")
+
+
+def _get_anthropic_api_key() -> str:
+    """User's session key → server env fallback."""
+    return _ctx_anthropic_key.get() or os.environ.get("ANTHROPIC_API_KEY", "")
 
 # ── Model constants (Anthropic) ───────────────────────────────────────────────
 MODEL_FAST  = "claude-sonnet-4-6"
@@ -46,10 +85,6 @@ def _get_ollama_model() -> str:
 def _get_groq_model(anthropic_model: str) -> str:
     return _GROQ_MODEL_MAP.get(anthropic_model, _GROQ_DEFAULT_MODEL)
 
-def _get_groq_api_key() -> str:
-    return os.environ.get("GROQ_API_KEY", "")
-
-
 class BaseAgent:
     def __init__(self, name: str, emoji: str, description: str,
                  model: str = MODEL_FAST):
@@ -63,7 +98,8 @@ class BaseAgent:
     @staticmethod
     def _anthropic_client():
         from anthropic import Anthropic
-        return Anthropic()
+        key = _get_anthropic_api_key()
+        return Anthropic(api_key=key) if key else Anthropic()
 
     @staticmethod
     def _openai_client(base_url: str, api_key: str, timeout: float = 90.0):

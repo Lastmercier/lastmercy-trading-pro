@@ -321,10 +321,14 @@ hr { border-color: #e2e8f0 !important; }
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def api_key_ok() -> bool:
-    return bool(os.environ.get("ANTHROPIC_API_KEY", "").strip())
+    """True when an Anthropic key is available — user's session key OR server key."""
+    user = st.session_state.get("_user_anthropic_key", "").strip()
+    return bool(user or os.environ.get("ANTHROPIC_API_KEY", "").strip())
 
 def groq_key_ok() -> bool:
-    return bool(os.environ.get("GROQ_API_KEY", "").strip())
+    """True when a Groq key is available — user's session key OR server key."""
+    user = st.session_state.get("_user_groq_key", "").strip()
+    return bool(user or os.environ.get("GROQ_API_KEY", "").strip())
 
 
 def ollama_running(url: str = "http://localhost:11434") -> bool:
@@ -1658,17 +1662,50 @@ ollama pull llama3.1:8b   # alternative
 
     if use_groq:
         os.environ["AI_PROVIDER"] = "groq"
-        if not groq_key_ok():
-            groq_key_input = st.text_input(
-                "🔑 Groq API Key",
-                type="password",
-                placeholder="gsk_...",
-                help="สมัครฟรีที่ console.groq.com — ไม่ต้องใส่บัตรเครดิต",
+        _srv_groq = bool(os.environ.get("GROQ_API_KEY", "").strip())
+
+        # ── Per-user Groq key ──────────────────────────────────────────────
+        st.markdown(
+            '<div style="font-size:0.72rem;font-weight:700;letter-spacing:0.8px;'
+            'text-transform:uppercase;color:#94a3b8;margin:10px 0 4px">🔑 Groq API Key</div>',
+            unsafe_allow_html=True,
+        )
+        st.text_input(
+            "Groq API Key",
+            key="_user_groq_key",          # auto-saved to session_state
+            type="password",
+            placeholder="gsk_...",
+            help="สมัครฟรีที่ console.groq.com — ไม่ต้องใส่บัตรเครดิต · เก็บเฉพาะ session นี้",
+            label_visibility="collapsed",
+        )
+        _entered_groq = st.session_state.get("_user_groq_key", "").strip()
+
+        if _entered_groq:
+            st.markdown(
+                '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:7px;'
+                'padding:5px 10px;font-size:0.71rem;color:#15803d;margin-bottom:2px">'
+                '🔒 ใช้ key ของคุณเอง — ไม่แชร์กับใคร</div>',
+                unsafe_allow_html=True,
             )
-            if groq_key_input:
-                os.environ["GROQ_API_KEY"] = groq_key_input.strip()
+        elif _srv_groq:
+            st.markdown(
+                '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:7px;'
+                'padding:5px 10px;font-size:0.71rem;color:#9a3412;margin-bottom:2px">'
+                '⚠️ ใช้ server key (quota รวม) — แนะนำให้ใส่ key ของตัวเองแยก</div>',
+                unsafe_allow_html=True,
+            )
         else:
-            st.success("Groq API Key loaded ✓", icon="⚡")
+            st.markdown(
+                '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:7px;'
+                'padding:5px 10px;font-size:0.71rem;color:#b91c1c;margin-bottom:2px">'
+                '❌ ต้องใส่ Groq Key ก่อนจึงจะ Run Analysis ได้</div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                "👉 [สมัคร Groq API Key ฟรี (ไม่ต้องบัตรเครดิต)](https://console.groq.com/keys)",
+                help="เปิด Link → Sign up → Create API Key → Copy → วางที่นี่",
+            )
+
         st.caption("Model: llama-3.3-70b · llama-3.1-8b-instant (fast tasks)")
         st.info(
             "⚠️ **Groq Free Tier limits:**\n"
@@ -1680,17 +1717,48 @@ ollama pull llama3.1:8b   # alternative
 
     elif not use_groq and not use_ollama:
         os.environ["AI_PROVIDER"] = "anthropic"
-        if not api_key_ok():
-            api_key_input = st.text_input(
-                "🔑 Anthropic API Key",
-                type="password",
-                placeholder="sk-ant-...",
-                help="Get your key at console.anthropic.com · or set in .env",
+        _srv_anthropic = bool(os.environ.get("ANTHROPIC_API_KEY", "").strip())
+
+        # ── Per-user Anthropic key ─────────────────────────────────────────
+        st.markdown(
+            '<div style="font-size:0.72rem;font-weight:700;letter-spacing:0.8px;'
+            'text-transform:uppercase;color:#94a3b8;margin:10px 0 4px">🔑 Anthropic API Key</div>',
+            unsafe_allow_html=True,
+        )
+        st.text_input(
+            "Anthropic API Key",
+            key="_user_anthropic_key",     # auto-saved to session_state
+            type="password",
+            placeholder="sk-ant-...",
+            help="Get your key at console.anthropic.com · เก็บเฉพาะ session นี้",
+            label_visibility="collapsed",
+        )
+        _entered_anthropic = st.session_state.get("_user_anthropic_key", "").strip()
+
+        if _entered_anthropic:
+            st.markdown(
+                '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:7px;'
+                'padding:5px 10px;font-size:0.71rem;color:#15803d;margin-bottom:2px">'
+                '🔒 ใช้ key ของคุณเอง — ไม่แชร์กับใคร</div>',
+                unsafe_allow_html=True,
             )
-            if api_key_input:
-                os.environ["ANTHROPIC_API_KEY"] = api_key_input.strip()
+        elif _srv_anthropic:
+            st.markdown(
+                '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:7px;'
+                'padding:5px 10px;font-size:0.71rem;color:#9a3412;margin-bottom:2px">'
+                '⚠️ ใช้ server key — แนะนำให้ใส่ key ของตัวเองแยก</div>',
+                unsafe_allow_html=True,
+            )
         else:
-            st.success("API Key loaded ✓", icon="🔑")
+            st.markdown(
+                '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:7px;'
+                'padding:5px 10px;font-size:0.71rem;color:#b91c1c;margin-bottom:2px">'
+                '❌ ต้องใส่ Anthropic Key ก่อนจึงจะ Run Analysis ได้</div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                "👉 [Get Anthropic API Key](https://console.anthropic.com/settings/keys)",
+            )
 
     # ── Asset input ───────────────────────────────────────────────────────────
     st.markdown("### 📌 Asset")
@@ -2056,6 +2124,18 @@ from agents.ic_team import InvestmentCommittee
 from tools.market_data import MarketData
 from tools.pdf_reader import extract_text
 
+# ── Inject per-session API keys into context vars ─────────────────────────────
+# This must happen before any thread pools are created so workers inherit it.
+import contextvars as _ctxvars
+from agents.base import set_session_keys as _set_session_keys
+_set_session_keys(
+    groq_key      = st.session_state.get("_user_groq_key",      "").strip(),
+    anthropic_key = st.session_state.get("_user_anthropic_key", "").strip(),
+)
+# Snapshot the full context now — every pool.submit() call below will wrap
+# its function in this context so session keys reach all worker threads.
+_analysis_ctx = _ctxvars.copy_context()
+
 # ── Pipeline execution ────────────────────────────────────────────────────────
 ticker_raw = ticker_input.strip()
 
@@ -2249,8 +2329,8 @@ def _run_scout():
             else s.scan(ticker, technicals, tf_label))
 
 with _TPE(max_workers=2) as _pool:
-    _fw = _pool.submit(_run_wizard)
-    _fs = _pool.submit(_run_scout) if ph_scout else None
+    _fw = _pool.submit(_analysis_ctx.run, _run_wizard)
+    _fs = _pool.submit(_analysis_ctx.run, _run_scout) if ph_scout else None
     try:
         research_output = _fw.result(timeout=150)
     except Exception as _wiz_err:
@@ -2284,8 +2364,8 @@ def _run_trader():
     return Trader().generate_signal(ticker, scan_output, research_output, technicals)
 
 with _TPE(max_workers=2) as _pool:
-    _fsage   = _pool.submit(_run_sage)
-    _ftrader = _pool.submit(_run_trader) if ph_trader else None
+    _fsage   = _pool.submit(_analysis_ctx.run, _run_sage)
+    _ftrader = _pool.submit(_analysis_ctx.run, _run_trader) if ph_trader else None
     try:
         critique_output = _fsage.result(timeout=120)
     except Exception as _e:
@@ -2314,8 +2394,8 @@ def _run_risk():
     return RiskAgent().size_position(ticker, trade_card_text, portfolio_size, risk_pct)
 
 with _TPE(max_workers=2) as _pool:
-    _fpriest = _pool.submit(_run_priest)
-    _frisk   = _pool.submit(_run_risk) if ph_risk else None
+    _fpriest = _pool.submit(_analysis_ctx.run, _run_priest)
+    _frisk   = _pool.submit(_analysis_ctx.run, _run_risk) if ph_risk else None
     try:
         fact_check_output = _fpriest.result(timeout=120)
     except Exception as _e:
