@@ -2446,6 +2446,21 @@ with ic_col:
             f"(Bull {conf.get('bull_pct',0)}% / Bear {conf.get('bear_pct',0)}%)\n"
         ) if conf else ""
 
+        # Shared technical-detail block — gives every IC analyst the exact numbers
+        # their prompts demand (ATR, SMA levels, Bollinger, 52w range, volume) so
+        # they reason from real data instead of replying "not in data".
+        tech_block = (
+            f"TECHNICALS — RSI(14): {technicals.get('rsi')} | MACD Hist: {technicals.get('macd_hist')} "
+            f"| ATR(14): {technicals.get('atr')}\n"
+            f"SMA20: {technicals.get('sma20')} | SMA50: {technicals.get('sma50')} | SMA200: {technicals.get('sma200')}\n"
+            f"Bollinger: Upper {technicals.get('bb_upper')} / Lower {technicals.get('bb_lower')}\n"
+            f"52W High: {technicals.get('high_52w')} / Low: {technicals.get('low_52w')} "
+            f"| Support: {technicals.get('support')} / Resistance: {technicals.get('resistance')}\n"
+            f"Volume: {fmt_number(technicals.get('volume'))} vs 20D avg {fmt_number(technicals.get('avg_volume_20d'))} "
+            f"(ratio {technicals.get('volume_ratio')})\n"
+            f"Change: 1D {technicals.get('change_1d_pct')}% | 5D {technicals.get('change_5d_pct')}%\n"
+        )
+
         if asset_class == "crypto":
             ic_context = (
                 f"ASSET: {ticker} ({company}) | CLASS: Cryptocurrency | MARKET: {market}\n"
@@ -2453,9 +2468,10 @@ with ic_col:
                 f"24H: {info.get('price_change_24h_pct','?')}% | 7D: {info.get('price_change_7d_pct','?')}% | 30D: {info.get('price_change_30d_pct','?')}%\n"
                 f"ATH: {info.get('ath','?')} ({info.get('ath_change_pct','?')}% from ATH)\n"
                 f"Circulating Supply: {fmt_number(info.get('circulating_supply'))} | Total Supply: {fmt_number(info.get('total_supply'))}\n"
-                f"RSI: {technicals.get('rsi')} | Volume 24H: {fmt_number(info.get('total_volume_usd'))}\n"
-                f"Above SMA50: {technicals.get('above_sma50')} | Above SMA200: {technicals.get('above_sma200')}\n"
+                f"24H Volume (USD): {fmt_number(info.get('total_volume_usd'))}\n"
+                f"{tech_block}"
                 f"{mtf_summary}\n"
+                f"NOTE: This is a cryptocurrency — no P/E, earnings, or moat. Use network/adoption, supply dynamics, and flow.\n"
                 f"RESEARCH ANALYST SUMMARY:\n{research_output[:1500]}\n\n"
                 f"CONTRARIAN BEAR THESIS (Sage):\n{critique_output[:1000]}\n"
             )
@@ -2466,9 +2482,9 @@ with ic_col:
                 f"P/E: {info.get('pe_ratio')} | P/B: {info.get('pb_ratio')} | ROE: {pct(info.get('roe'))}\n"
                 f"Revenue Growth: {pct(info.get('revenue_growth'))} | Net Margin: {pct(info.get('net_margin'))}\n"
                 f"Gross Margin: {pct(info.get('gross_margin'))} | Op Margin: {pct(info.get('operating_margin'))}\n"
-                f"D/E: {info.get('debt_equity')} | Current Ratio: {info.get('current_ratio')}\n"
-                f"RSI: {technicals.get('rsi')} | Above SMA200: {technicals.get('above_sma200')} | MACD Hist: {technicals.get('macd_hist')}\n"
+                f"D/E: {info.get('debt_equity')} | Current Ratio: {info.get('current_ratio')} | FCF: {fmt_number(info.get('free_cashflow'))}\n"
                 f"Beta: {info.get('beta')} | Analyst Target: {info.get('analyst_target')} | Recommendation: {info.get('recommendation')}\n"
+                f"{tech_block}"
                 f"{mtf_summary}\n"
                 f"RESEARCH ANALYST SUMMARY:\n{research_output[:1500]}\n\n"
                 f"CONTRARIAN BEAR THESIS (Sage):\n{critique_output[:1000]}\n"
