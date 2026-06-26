@@ -299,6 +299,7 @@ class InvestmentCommittee:
         research_context: str,
         on_agent_start: Optional[Callable[[str], None]] = None,
         on_agent_done: Optional[Callable[[str, str], None]] = None,
+        session_keys: Optional[dict] = None,
     ) -> dict:
         """
         Voting agents (all except CFAPortfolioManager) run in PARALLEL.
@@ -325,10 +326,12 @@ class InvestmentCommittee:
         # contextvars do NOT propagate into ThreadPoolExecutor workers — each
         # worker starts with an empty context, so a user's per-session API key
         # would be lost and every agent would fail with "Missing credentials".
-        # Snapshot the keys here (main thread) and re-apply them inside each
-        # worker via the pool's initializer.
+        # Use session_keys passed directly from app.py (_SESSION_KEYS), which
+        # are captured directly from st.session_state — more reliable than
+        # reading contextvars (which may be empty if the key came from env var
+        # rather than session_state).
         from .base import get_session_keys, set_session_keys
-        _sess_keys = get_session_keys()
+        _sess_keys = session_keys if session_keys is not None else get_session_keys()
 
         def _init_worker():
             set_session_keys(**_sess_keys)

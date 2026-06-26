@@ -2151,9 +2151,13 @@ from tools.pdf_reader import extract_text
 # otherwise a user's per-session key is silently lost and every agent fails with
 # "Missing credentials".
 from agents.base import set_session_keys as _set_session_keys
+# Prefer user's session key; fall back to server env var (secrets.toml / cloud).
+# This ensures worker threads always have a non-empty key when one is available.
 _SESSION_KEYS = dict(
-    groq_key      = st.session_state.get("_user_groq_key",      "").strip(),
-    anthropic_key = st.session_state.get("_user_anthropic_key", "").strip(),
+    groq_key      = (st.session_state.get("_user_groq_key",      "").strip()
+                     or os.environ.get("GROQ_API_KEY",      "").strip()),
+    anthropic_key = (st.session_state.get("_user_anthropic_key", "").strip()
+                     or os.environ.get("ANTHROPIC_API_KEY", "").strip()),
 )
 _set_session_keys(**_SESSION_KEYS)        # main thread (Joey + main-thread calls)
 
@@ -2527,7 +2531,8 @@ with ic_col:
                 )
 
         try:
-            ic_results = ic.run(ticker, ic_context, on_agent_start=on_start, on_agent_done=on_done)
+            ic_results = ic.run(ticker, ic_context, on_agent_start=on_start, on_agent_done=on_done,
+                                session_keys=_SESSION_KEYS)
         except Exception as _ic_err:
             _err_str = str(_ic_err)
             if "RateLimit" in _err_str or "rate_limit" in _err_str.lower() or "429" in _err_str:
