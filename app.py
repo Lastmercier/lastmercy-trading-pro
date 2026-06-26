@@ -2543,6 +2543,18 @@ with ic_col:
                 )
             else:
                 st.error(f"IC Committee error: {_ic_err}", icon="❌")
+                with st.expander("🔍 Debug info (ชั่วคราว — ช่วย diagnose)"):
+                    st.code(
+                        f"AI_PROVIDER  : {os.environ.get('AI_PROVIDER', '(not set)')}\n"
+                        f"groq_key     : {'SET ({} chars)'.format(len(_SESSION_KEYS.get('groq_key',''))) if _SESSION_KEYS.get('groq_key') else 'EMPTY'}\n"
+                        f"anthropic_key: {'SET ({} chars)'.format(len(_SESSION_KEYS.get('anthropic_key',''))) if _SESSION_KEYS.get('anthropic_key') else 'EMPTY'}\n"
+                        f"env GROQ_API_KEY     : {'SET' if os.environ.get('GROQ_API_KEY') else 'not set'}\n"
+                        f"env ANTHROPIC_API_KEY: {'SET' if os.environ.get('ANTHROPIC_API_KEY') else 'not set'}\n"
+                        f"session _user_groq_key     : {'SET' if st.session_state.get('_user_groq_key','').strip() else 'EMPTY'}\n"
+                        f"session _user_anthropic_key: {'SET' if st.session_state.get('_user_anthropic_key','').strip() else 'EMPTY'}\n"
+                        f"error type: {type(_ic_err).__name__}\n"
+                        f"error: {_ic_err}"
+                    )
             ic_results = {}
     else:
         st.info("IC Committee skipped (short-term mode selected)", icon="⏭️")
