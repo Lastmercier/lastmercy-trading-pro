@@ -10,64 +10,48 @@ so the sidebar can switch it without restarting the app.
 Per-session API keys
 ────────────────────
 In a shared deployment each user brings their own API key.
-Keys are stored in contextvars.ContextVar so they are:
-  • Isolated per Streamlit session  (no cross-user leakage)
-  • NOT written to os.environ (which is process-wide and would be shared)
+Keys are stored in threading.local() so they are per-thread and survive
+Streamlit's internal context management (which was found to silently reset
+contextvars between set_session_keys() and the actual API call in workers).
 
-WARNING: contextvars do NOT propagate into ThreadPoolExecutor worker threads —
-a worker starts with a fresh, empty context. set_session_keys() in the main
-thread only covers main-thread calls. Each worker pool must re-apply the keys
-inside its own threads (snapshot with get_session_keys() in the main thread,
-then set_session_keys(**snapshot) via the pool's initializer).
+NOTE: Each worker pool must call set_session_keys() inside its own threads
+via initializer= (or directly inside the task function). threading.local()
+does NOT auto-propagate to new threads — new threads start empty.
 """
 
 import os
 import time
-import contextvars as _cv
+import threading
 from typing import Generator
 
-# ── Per-context (per-session) API key storage ─────────────────────────────────
-_ctx_groq_key      = _cv.ContextVar("groq_api_key",      default="")
-_ctx_anthropic_key = _cv.ContextVar("anthropic_api_key", default="")
+# ── Per-thread API key storage (replaces contextvars which Streamlit resets) ──
+_tl = threading.local()
 
 
 def set_session_keys(*, groq_key: str = "", anthropic_key: str = "") -> None:
-    """
-    Store API keys for the current context (the calling thread).
-
-    IMPORTANT: contextvars do NOT propagate into ThreadPoolExecutor worker
-    threads — a worker starts with a fresh, empty context. So calling this
-    once in the main thread is NOT enough: every worker pool must re-apply the
-    keys inside its own threads (e.g. via the pool's `initializer=`). Use
-    get_session_keys() to snapshot in the main thread, then
-    set_session_keys(**snapshot) inside each worker.
-    """
+    """Store API keys for the current thread. Call from each worker thread."""
     if groq_key:
-        _ctx_groq_key.set(groq_key)
+        _tl.groq_key = groq_key
     if anthropic_key:
-        _ctx_anthropic_key.set(anthropic_key)
+        _tl.anthropic_key = anthropic_key
 
 
 def get_session_keys() -> dict:
-    """
-    Snapshot the current session keys. Call from the thread that set them
-    (the main Streamlit thread), then re-apply inside each worker thread via
-    set_session_keys(**snapshot). See set_session_keys() for why this is needed.
-    """
+    """Snapshot the current thread's session keys."""
     return {
-        "groq_key":      _ctx_groq_key.get(),
-        "anthropic_key": _ctx_anthropic_key.get(),
+        "groq_key":      getattr(_tl, "groq_key",      ""),
+        "anthropic_key": getattr(_tl, "anthropic_key", ""),
     }
 
 
 def _get_groq_api_key() -> str:
-    """User's session key → server env fallback."""
-    return _ctx_groq_key.get() or os.environ.get("GROQ_API_KEY", "")
+    """User's thread-local key → server env fallback."""
+    return getattr(_tl, "groq_key", "") or os.environ.get("GROQ_API_KEY", "")
 
 
 def _get_anthropic_api_key() -> str:
-    """User's session key → server env fallback."""
-    return _ctx_anthropic_key.get() or os.environ.get("ANTHROPIC_API_KEY", "")
+    """User's thread-local key → server env fallback."""
+    return getattr(_tl, "anthropic_key", "") or os.environ.get("ANTHROPIC_API_KEY", "")
 
 # ── Model constants (Anthropic) ───────────────────────────────────────────────
 MODEL_FAST  = "claude-sonnet-4-6"
