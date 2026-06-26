@@ -26,13 +26,24 @@ Rules:
 5. State conviction as a percentage and explain the edge.
 6. CRITICAL — FOLLOW SCOUT'S DIRECTION. If Scout says SHORT, your card MUST be SHORT. Do NOT flip to LONG.
 7. For LONG trades: Stop = Entry − 1.5×ATR (support-based). For SHORT trades: Stop = Entry + 1.5×ATR (resistance-based). TPs for LONG are above entry; TPs for SHORT are below entry. R:R is always positive.
-8. If Scout declares NO TRADE, state "NO TRADE — insufficient edge" and explain why."""
+8. If Scout declares NO TRADE, state "NO TRADE — insufficient edge" and explain why.
+9. R:R GATE — before finalising Confidence %:
+   Compute TP1 R:R = (TP1 − Entry) ÷ (Entry − Stop)  [LONG]  or  (Entry − TP1) ÷ (Stop − Entry)  [SHORT].
+   If TP1 R:R < 1.0: label the trade "⚠️ SUB-OPTIMAL ENTRY" immediately after the setup summary,
+   explain why R:R is below 1:1, and CAP your Confidence at 60% maximum.
+   If TP1 R:R ≥ 1.0: proceed normally, no cap."""
 
 # ── Risk ──────────────────────────────────────────────────────────────────────
 RISK_SYS = """You are the Chief Risk Officer at a multi-billion dollar hedge fund.
 Your position sizing methodology: modified Kelly Criterion capped at firm risk limits.
 Rules:
 1. Show all intermediate calculation steps (risk per unit → units → position value → portfolio %).
+   POSITION SIZING FORMULA (mandatory — no substitutions):
+     risk_per_unit  = |entry_price − stop_price|  (in dollars/points — NOT a percentage)
+     max_risk_$     = portfolio_value × risk_pct / 100
+     units          = max_risk_$ ÷ risk_per_unit
+   Example: entry=60,000  stop=57,178  →  risk_per_unit=2,822  |  max_risk$=2,000  →  units=0.71
+   NEVER write "use max risk per unit instead" or skip the dollar-per-unit step.
 2. Calculate portfolio impact at each TP and at stop-loss.
 3. Compute Expected Value (EV) = (Win% × avg gain) − (Loss% × avg loss). Flag if EV < 0.
 4. Assess liquidity: can we exit the full position in 1 trading day without moving the market?
@@ -312,11 +323,14 @@ Max risk per trade: {risk_pct}% = {risk_amount:,.0f}
 ━━━ REQUIRED OUTPUT ━━━
 
 ## POSITION SIZING CALCULATION
-Step 1 — Risk per unit (Entry midpoint − Stop Loss): ___
-Step 2 — Units = Max risk ÷ Risk per unit: ___
-Step 3 — Position value (Units × Entry price): ___
-Step 4 — Portfolio allocation %: ___
-Step 5 — Liquidity check: Position size vs avg daily volume — can exit in <1 day? Y/N
+Step 1 — risk_per_unit = |entry_price − stop_price| in dollars/points (NOT a %).
+          Extract the exact entry and stop from the trade card above. Subtract. Show the arithmetic.
+          Example format: risk_per_unit = |60,000 − 57,178| = 2,822
+Step 2 — max_risk_$ = {risk_amount:,.0f}  (given above)
+Step 3 — units = max_risk_$ ÷ risk_per_unit = {risk_amount:,.0f} ÷ [Step 1 result] = ___
+Step 4 — Position value = units × entry_price: ___
+Step 5 — Portfolio allocation %: ___
+Step 6 — Liquidity check: Position size vs avg daily volume — can exit in <1 day? Y/N
 
 ## P&L PROJECTION
            | Price  | P&L (___units) | Portfolio impact
@@ -338,6 +352,6 @@ Comparison to rule-based size (Step 2): [take the smaller of the two]
 ## TRADE VIABILITY RATING
 Rating: OPTIMAL ✅ / ACCEPTABLE ⚠️ / REDUCE SIZE ⚡ / AVOID ❌
 Reasoning: [specific justification with numbers]
-Final recommended position: ___ units ({risk_pct}% risk budget {'fully' if True else 'partially'} deployed)"""
+Final recommended position: ___ units ({risk_pct}% risk budget deployed)"""
 
         return self.run(RISK_SYS, prompt, max_tokens=800)
