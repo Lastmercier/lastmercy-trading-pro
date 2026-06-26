@@ -12,10 +12,13 @@ Per-session API keys
 In a shared deployment each user brings their own API key.
 Keys are stored in contextvars.ContextVar so they are:
   • Isolated per Streamlit session  (no cross-user leakage)
-  • Auto-propagated to ThreadPoolExecutor workers via copy_context()
   • NOT written to os.environ (which is process-wide and would be shared)
 
-Call set_session_keys() once per analysis run from the main thread.
+WARNING: contextvars do NOT propagate into ThreadPoolExecutor worker threads —
+a worker starts with a fresh, empty context. set_session_keys() in the main
+thread only covers main-thread calls. Each worker pool must re-apply the keys
+inside its own threads (snapshot with get_session_keys() in the main thread,
+then set_session_keys(**snapshot) via the pool's initializer).
 """
 
 import os
@@ -30,16 +33,31 @@ _ctx_anthropic_key = _cv.ContextVar("anthropic_api_key", default="")
 
 def set_session_keys(*, groq_key: str = "", anthropic_key: str = "") -> None:
     """
-    Store API keys for the current context (Streamlit session).
+    Store API keys for the current context (the calling thread).
 
-    Call this once per analysis run from the main Streamlit thread.
-    All child threads spawned by ThreadPoolExecutor via copy_context().run()
-    will inherit these values automatically.
+    IMPORTANT: contextvars do NOT propagate into ThreadPoolExecutor worker
+    threads — a worker starts with a fresh, empty context. So calling this
+    once in the main thread is NOT enough: every worker pool must re-apply the
+    keys inside its own threads (e.g. via the pool's `initializer=`). Use
+    get_session_keys() to snapshot in the main thread, then
+    set_session_keys(**snapshot) inside each worker.
     """
     if groq_key:
         _ctx_groq_key.set(groq_key)
     if anthropic_key:
         _ctx_anthropic_key.set(anthropic_key)
+
+
+def get_session_keys() -> dict:
+    """
+    Snapshot the current session keys. Call from the thread that set them
+    (the main Streamlit thread), then re-apply inside each worker thread via
+    set_session_keys(**snapshot). See set_session_keys() for why this is needed.
+    """
+    return {
+        "groq_key":      _ctx_groq_key.get(),
+        "anthropic_key": _ctx_anthropic_key.get(),
+    }
 
 
 def _get_groq_api_key() -> str:

@@ -322,13 +322,20 @@ class InvestmentCommittee:
             vote   = _parse_vote(output)
             return agent, output, vote
 
-        # Worker threads are created via threading.Thread(copy_context()) internally,
-        # so they automatically inherit the calling thread's ContextVar values
-        # (including per-session API keys set via set_session_keys()).
-        # No ctx.run() wrapper is needed — and sharing one Context across
-        # concurrent threads would cause "already entered" errors.
+        # contextvars do NOT propagate into ThreadPoolExecutor workers — each
+        # worker starts with an empty context, so a user's per-session API key
+        # would be lost and every agent would fail with "Missing credentials".
+        # Snapshot the keys here (main thread) and re-apply them inside each
+        # worker via the pool's initializer.
+        from .base import get_session_keys, set_session_keys
+        _sess_keys = get_session_keys()
+
+        def _init_worker():
+            set_session_keys(**_sess_keys)
+
         max_workers = min(len(voting_agents), 10)
-        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        with ThreadPoolExecutor(max_workers=max_workers,
+                                initializer=_init_worker) as pool:
             futures = {pool.submit(_run_one, a): a for a in voting_agents}
             for future in as_completed(futures):
                 agent, output, vote = future.result()

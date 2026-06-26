@@ -2144,15 +2144,22 @@ from tools.market_data import MarketData
 from tools.pdf_reader import extract_text
 
 # ── Inject per-session API keys into context vars ─────────────────────────────
-# Must be called BEFORE any ThreadPoolExecutor is created.
-# Python's threading.Thread copies the calling thread's context at creation
-# time, so all worker threads that are spawned AFTER this call will
-# automatically inherit these keys — no ctx.run() wrapper needed.
+# contextvars do NOT propagate into ThreadPoolExecutor worker threads — a worker
+# starts with a fresh, empty context. So setting the keys in the main thread is
+# only enough for main-thread calls (e.g. the Joey orchestrator). Every worker
+# pool below must re-apply the keys inside its own threads via `initializer=`,
+# otherwise a user's per-session key is silently lost and every agent fails with
+# "Missing credentials".
 from agents.base import set_session_keys as _set_session_keys
-_set_session_keys(
+_SESSION_KEYS = dict(
     groq_key      = st.session_state.get("_user_groq_key",      "").strip(),
     anthropic_key = st.session_state.get("_user_anthropic_key", "").strip(),
 )
+_set_session_keys(**_SESSION_KEYS)        # main thread (Joey + main-thread calls)
+
+def _init_pool_worker():
+    """Re-apply the session API keys inside a freshly-spawned worker thread."""
+    _set_session_keys(**_SESSION_KEYS)
 
 # ── Pipeline execution ────────────────────────────────────────────────────────
 ticker_raw = ticker_input.strip()
@@ -2346,7 +2353,7 @@ def _run_scout():
     return (s.scan_mtf(ticker, technicals, mtf_data, tf_label) if mtf_data
             else s.scan(ticker, technicals, tf_label))
 
-with _TPE(max_workers=2) as _pool:
+with _TPE(max_workers=2, initializer=_init_pool_worker) as _pool:
     _fw = _pool.submit(_run_wizard)
     _fs = _pool.submit(_run_scout) if ph_scout else None
     try:
@@ -2381,7 +2388,7 @@ def _run_sage():
 def _run_trader():
     return Trader().generate_signal(ticker, scan_output, research_output, technicals)
 
-with _TPE(max_workers=2) as _pool:
+with _TPE(max_workers=2, initializer=_init_pool_worker) as _pool:
     _fsage   = _pool.submit(_run_sage)
     _ftrader = _pool.submit(_run_trader) if ph_trader else None
     try:
@@ -2411,7 +2418,7 @@ def _run_priest():
 def _run_risk():
     return RiskAgent().size_position(ticker, trade_card_text, portfolio_size, risk_pct)
 
-with _TPE(max_workers=2) as _pool:
+with _TPE(max_workers=2, initializer=_init_pool_worker) as _pool:
     _fpriest = _pool.submit(_run_priest)
     _frisk   = _pool.submit(_run_risk) if ph_risk else None
     try:
