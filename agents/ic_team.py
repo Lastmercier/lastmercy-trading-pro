@@ -318,20 +318,17 @@ class InvestmentCommittee:
             for agent in voting_agents:
                 on_agent_start(agent.name)
 
+        from .base import get_session_keys, set_session_keys
+        _sess_keys = session_keys if session_keys is not None else get_session_keys()
+
         def _run_one(agent: ICAgent):
+            # Re-apply keys inside the task itself — belt-and-suspenders against
+            # any contextvar scope reset that may occur between the initializer
+            # and actual task execution inside ThreadPoolExecutor.
+            set_session_keys(**_sess_keys)
             output = agent.analyze(ticker, research_context)
             vote   = _parse_vote(output)
             return agent, output, vote
-
-        # contextvars do NOT propagate into ThreadPoolExecutor workers — each
-        # worker starts with an empty context, so a user's per-session API key
-        # would be lost and every agent would fail with "Missing credentials".
-        # Use session_keys passed directly from app.py (_SESSION_KEYS), which
-        # are captured directly from st.session_state — more reliable than
-        # reading contextvars (which may be empty if the key came from env var
-        # rather than session_state).
-        from .base import get_session_keys, set_session_keys
-        _sess_keys = session_keys if session_keys is not None else get_session_keys()
 
         def _init_worker():
             set_session_keys(**_sess_keys)
