@@ -340,9 +340,18 @@ TP3 hit    | ___    | +___           | +___% portfolio
 Stop hit   | ___    | -___           | -{risk_pct}% portfolio
 
 ## EXPECTED VALUE ANALYSIS
-Win rate assumption (from Scout confidence): ___%
-EV = (Win% × avg TP) − (Loss% × Stop distance) = ___
-EV per unit of risk: ___  [Positive = proceed | Negative = DO NOT TRADE]
+Use the 3-scenario matrix from the Trade Card above. EV = Σ(probability × return_per_scenario).
+Direction note: for LONG, profit = TP − Entry (positive when price rises).
+               For SHORT, profit = Entry − TP (positive when price FALLS).
+               Loss scenario: always negative (stop hit).
+
+Show all three lines:
+  Bull  (___% prob): return = ___ per unit  →  contribution = ___% × ___ = ___
+  Base  (___% prob): return = ___ per unit  →  contribution = ___% × ___ = ___
+  Bear  (___% prob): return = ___ per unit  →  contribution = ___% × ___ = ___
+  EV per unit = sum of three contributions = ___
+[Positive EV → proceed | Zero/Negative → DO NOT TRADE]
+Do NOT use (win% × TP) × 2 or any shortcut. Show the full three-line calculation above.
 
 ## KELLY CRITERION
 Full Kelly: ___% of portfolio

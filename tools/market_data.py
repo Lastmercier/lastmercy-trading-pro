@@ -538,11 +538,15 @@ class MarketData:
             rv    = _v(rsi.iloc[-1], 1)
             out["rsi"] = rv
             if rv and rv >= 70:
-                out["rsi_zone"] = "overbought"; out["rsi_zone_th"] = "Overbought 🔴"
+                out["rsi_zone"] = "overbought";           out["rsi_zone_th"] = "Overbought 🔴";   out["rsi_zone_en"] = "Overbought"
+            elif rv and rv >= 60:
+                out["rsi_zone"] = "approaching overbought"; out["rsi_zone_th"] = "Near OB ⚠️";    out["rsi_zone_en"] = "Near Overbought"
             elif rv and rv <= 30:
-                out["rsi_zone"] = "oversold";   out["rsi_zone_th"] = "Oversold 🟢"
+                out["rsi_zone"] = "oversold";             out["rsi_zone_th"] = "Oversold 🟢";     out["rsi_zone_en"] = "Oversold"
+            elif rv and rv <= 40:
+                out["rsi_zone"] = "approaching oversold"; out["rsi_zone_th"] = "Near OS 🟡";     out["rsi_zone_en"] = "Approaching Oversold"
             else:
-                out["rsi_zone"] = "neutral";    out["rsi_zone_th"] = "Neutral ⚪"
+                out["rsi_zone"] = "neutral";              out["rsi_zone_th"] = "Neutral ⚪";      out["rsi_zone_en"] = "Neutral"
 
         # ── MACD ─────────────────────────────────────────────────────────────
         if n >= 27:
@@ -556,13 +560,17 @@ class MarketData:
             out["macd_hist"]      = hv
             out["macd_hist_prev"] = hv_prev   # stored for bias direction scoring
             if hv and hv > 0 and (hv_prev or 0) <= 0:
-                out["macd_signal_th"] = "Golden Cross ✅"
+                out["macd_signal_th"] = "Golden Cross ✅"; out["macd_signal_en"] = "Golden Cross"
+                out["_macd_event"] = "golden_cross"
             elif hv and hv < 0 and (hv_prev or 0) >= 0:
-                out["macd_signal_th"] = "Death Cross ❌"
+                out["macd_signal_th"] = "Death Cross ❌";  out["macd_signal_en"] = "Death Cross"
+                out["_macd_event"] = "death_cross"
             elif hv and hv > 0:
-                out["macd_signal_th"] = "Bullish ↑"
+                out["macd_signal_th"] = "Bullish ↑";      out["macd_signal_en"] = "Bullish"
+                out["_macd_event"] = "bullish"
             else:
-                out["macd_signal_th"] = "Bearish ↓"
+                out["macd_signal_th"] = "Bearish ↓";      out["macd_signal_en"] = "Bearish"
+                out["_macd_event"] = "bearish"
 
         # ── Support / Resistance ──────────────────────────────────────────────
         lb = min(20, n)
@@ -614,6 +622,15 @@ class MarketData:
             out["bias"] = "SELL";    out["bias_th"] = "ขาย";   out["bias_dot"] = "🔴"
         else:
             out["bias"] = "NEUTRAL"; out["bias_th"] = "รอดู";  out["bias_dot"] = "🟡"
+
+        # MACD event override — a Golden Cross is inherently bullish and must not
+        # produce a SELL bias (it contradicts the crossover signal). Upgrade to NEUTRAL.
+        # Death Cross is inherently bearish — prevent BUY bias.
+        _ev = out.get("_macd_event")
+        if _ev == "golden_cross" and out["bias"] == "SELL":
+            out["bias"] = "NEUTRAL"; out["bias_th"] = "รอดู"; out["bias_dot"] = "🟡"
+        elif _ev == "death_cross" and out["bias"] == "BUY":
+            out["bias"] = "NEUTRAL"; out["bias_th"] = "รอดู"; out["bias_dot"] = "🟡"
 
         return out
 

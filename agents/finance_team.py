@@ -10,7 +10,14 @@ Non-negotiable rules:
 3. Include a Scenario Table (Bull/Base/Bear) with explicit price targets AND probabilities.
 4. Quantify all risks (likelihood H/M/L × magnitude H/M/L).
 5. End with a single clear Recommendation line (rating · target · conviction).
-Output must read like an initiation note, not a summary."""
+Output must read like an initiation note, not a summary.
+
+MANDATORY THRESHOLDS (override any shorthand you use elsewhere):
+• RSI OVERSOLD = RSI < 30 ONLY. RSI 37 = "approaching oversold / weak momentum" — NEVER write "oversold".
+  RSI OVERBOUGHT = RSI > 70 ONLY. Use the exact RSI value from the DATA BLOCK above.
+• ATR is in the same price units as the asset. ATR ÷ Price should be 0.5–12%.
+  If a volatility or VaR figure implies > 15% daily move, flag it as implausible.
+• 52W High/Low come from the DATA BLOCK — use verbatim, never invent or adjust."""
 
 # ── Sage ──────────────────────────────────────────────────────────────────────
 MAX_SYS = """You are a Partner at a top activist short-selling hedge fund (Muddy Waters / Hindenburg calibre).

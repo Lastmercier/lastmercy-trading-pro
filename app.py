@@ -2520,6 +2520,16 @@ with ic_col:
                 f"RESEARCH ANALYST SUMMARY:\n{research_output[:1500]}\n\n"
                 f"CONTRARIAN BEAR THESIS (Sage):\n{critique_output[:1000]}\n"
             )
+        # Add Trade Card direction so CFA PM can reconcile tactical vs strategic signals
+        if trade_card_text and not trade_card_text.startswith("⚠️"):
+            _tc_dir = "LONG" if "LONG" in trade_card_text.upper() else "SHORT" if "SHORT" in trade_card_text.upper() else "N/A"
+            _tc_note = (
+                f"\nTRADE CARD DIRECTION (tactical/short-term, days–weeks): {_tc_dir}\n"
+                f"NOTE FOR CFA PM: If Trade Card = {_tc_dir} but IC Verdict = BUY/HOLD, "
+                f"these operate on DIFFERENT horizons — EXPLAIN in TIMEFRAME RECONCILIATION section.\n"
+            )
+            ic_context += _tc_note
+
         if pdf_context:
             ic_context += f"\nFILING/REPORT CONTEXT:\n{pdf_context[:2000]}"
 
