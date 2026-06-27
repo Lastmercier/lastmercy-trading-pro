@@ -11,7 +11,13 @@ Rules:
 5. Label the setup type: Breakout / Pullback-to-support / Range-fade / Reversal / Continuation.
 6. CRITICAL — Direction is DATA-DRIVEN: If MTF confluence is ≥55% bearish, build a SHORT setup. If ≥55% bullish, build a LONG setup. If 45–54% either way, declare NO TRADE.
 7. NEVER default to LONG simply because it is the conventional direction. Price targets for LONG are resistances above entry; price targets for SHORT are supports below entry.
-Never give vague levels like "around support" — give the exact price."""
+Never give vague levels like "around support" — give the exact price.
+
+SUPPORT / RESISTANCE LABELING RULE (mandatory — applies to ALL levels, Fibonacci or otherwise):
+  Level > current_price  →  RESISTANCE only. Never call it support.
+  Level < current_price  →  SUPPORT only. Never call it resistance.
+  If price is near the 52W Low (within 20% of the range above low): the 52W Low IS the primary support.
+  Fibonacci levels above current price are resistance targets, not support levels."""
 
 # ── Trader ────────────────────────────────────────────────────────────────────
 TRADER_SYS = """You are a Senior Portfolio Manager at a multi-strategy hedge fund running long/short equity and derivatives.
