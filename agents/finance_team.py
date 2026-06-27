@@ -38,7 +38,29 @@ Rules:
 2. Flag mismatches as: [CORRECTION: stated X → actual Y].
 3. Score Data Confidence 1–10; deduct 1 point per unsupported claim or arithmetic error, explain each deduction.
 4. List any critical data gaps that would change the analysis.
-5. Final line: CLEARED FOR COMMITTEE / REQUIRES REVISION."""
+5. Final line: CLEARED FOR COMMITTEE / REQUIRES REVISION.
+
+CRITICAL AUDIT PROTOCOLS — an audit layer that introduces errors is worse than no audit:
+
+RULE A — SHOW WORKING BEFORE ANY CORRECTION (mandatory):
+Before writing any [CORRECTION], you MUST first show your recomputation:
+  Format: [recompute: <numerator> / <denominator> = <result>]
+  Example: [recompute: 2,056.74 / 60,049 = 0.03424 = 3.42%]
+  If recompute confirms the stated value → write "verified ✓" and DO NOT flag a correction.
+  Flagging a correction without recompute working is prohibited.
+
+RULE B — DECIMAL-SHIFT SANITY CHECK (stop and re-verify):
+If the value you plan to "correct TO" is exactly 10× or 0.1× the value you are "correcting FROM":
+  STOP — this is the signature of a decimal-place error in YOUR OWN calculation, not the analyst's.
+  Re-verify by a different method (e.g., check the plausibility range) before proceeding.
+  Classic example of this error: analyst states ATR% = 3.42%; you "correct" to 0.34%.
+  3.42% × 0.1 = 0.342% — that is YOUR decimal shift. The analyst was correct. Do not flag it.
+
+RULE C — ATR% PLAUSIBILITY RANGE:
+ATR ÷ Price should be 0.5%–12% for any liquid financial asset.
+If the stated or computed ATR% is within this range, it is NOT an error.
+If your computed ATR% is OUTSIDE this range, you likely have a unit error yourself.
+The AUTHORITY DATA REFERENCE includes a pre-computed ATR% — use it directly rather than recomputing."""
 
 
 class Reese(BaseAgent):
@@ -191,6 +213,14 @@ class Vera(BaseAgent):
         super().__init__("Priest", "✅", "Fact Auditor", MODEL_LITE)
 
     def fact_check(self, ticker: str, research: str, critique: str, info: dict, technicals: dict) -> str:
+        # Pre-compute ATR% so Priest doesn't need to derive it (prevents decimal-shift errors)
+        _atr   = technicals.get('atr')
+        _price = info.get('current_price') or technicals.get('current_price')
+        try:
+            _atr_pct = f"{float(_atr) / float(_price) * 100:.2f}%" if _atr and _price else "N/A"
+        except Exception:
+            _atr_pct = "N/A"
+
         prompt = f"""Audit the research and critique for {ticker}.
 
 RESEARCH (excerpt):
@@ -199,9 +229,10 @@ RESEARCH (excerpt):
 CRITIQUE (excerpt):
 {critique[:500]}
 
-AUTHORITATIVE DATA REFERENCE:
+AUTHORITATIVE DATA REFERENCE (pre-verified — use these values directly):
 Price {info.get('current_price')} | P/E {info.get('pe_ratio')} | P/B {info.get('pb_ratio')} | MCap {info.get('market_cap')}
-RSI {technicals.get('rsi')} | SMA200 {technicals.get('sma200')} | ATR {technicals.get('atr')}
+RSI {technicals.get('rsi')} | SMA200 {technicals.get('sma200')}
+ATR {technicals.get('atr')} | ATR% (pre-computed: ATR÷Price) = {_atr_pct}  ← use this directly, do NOT recompute ATR%
 52W High {info.get('52w_high')} | 52W Low {info.get('52w_low')}
 ROE {info.get('roe')} | Net Margin {info.get('net_margin')} | D/E {info.get('debt_equity')}
 Analyst Target {info.get('analyst_target')} | Revenue Growth {info.get('revenue_growth')}
@@ -209,12 +240,16 @@ Analyst Target {info.get('analyst_target')} | Revenue Growth {info.get('revenue_
 AUDIT OUTPUT — use exact headers:
 
 ## VERIFIED CLAIMS
-List claims that are numerically accurate (cite data point):
+List claims that are numerically accurate (cite data point). For each numeric claim you verify,
+show: [recompute: A / B = C] if applicable, then write "verified ✓".
 -
 -
 
 ## CORRECTIONS REQUIRED
-Format: [CORRECTION: stated ___ → actual ___] + explanation
+MANDATORY FORMAT: Before each correction, show your recompute working.
+  [recompute: <A> / <B> = <C>]  → only then → [CORRECTION: stated X → actual Y] + explanation
+If recompute confirms the stated value → write "verified ✓, no correction needed" instead.
+Decimal-shift check: if your corrected value is 10× or 0.1× the stated value, STOP and re-verify.
 -
 -
 
